@@ -1,0 +1,10 @@
+Name: Chronos
+Description: Tweak to sync Audible progress to Hardcover.
+Version: 1.0.0
+Package: dev.adrian.chronos
+Architecture: iphoneos-arm
+Maintainer: Adrian Castro
+Author: Adrian Castro
+Section: Tweaks
+Depends: ellekit
+Icon: https://camo.githubusercontent.com/ca7c034c005d8b360504ec7418a1521cbafc66206ab8a998aebbe8dd4a4c2f32/687474703a2f2f613332302e70686f626f732e6170706c652e636f6d2f75732f72313030302f3038362f507572706c65322f76342f32382f61302f66612f32386130666161312d643039642d306230632d613766642d3239353037373365666663392f6d7a6c2e6379686d6c7078782e706e67
