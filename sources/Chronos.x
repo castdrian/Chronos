@@ -7,12 +7,6 @@ static NSString       *currentContentID  = nil;
 static double          lastLoggedElapsed = -1;
 static NSInteger       lastLoggedChapter = -1;
 
-@interface AudibleMetadataCapture : NSObject
-+ (void)calculateBookProgress:(NSDictionary *)nowPlayingInfo;
-+ (void)processChapterData:(id)chapterObject withContext:(NSString *)context;
-+ (void)calculateTotalBookDuration;
-@end
-
 @implementation AudibleMetadataCapture
 + (BOOL)isSafeClassForKVC:(NSString *)className
 {
