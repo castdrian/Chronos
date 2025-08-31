@@ -1,11 +1,12 @@
 #import "Chronos.h"
 
-static NSMutableArray *allChapters       = nil;
-static double          totalBookDuration = 0.0;
-static NSString       *currentASIN       = nil;
-static NSString       *currentContentID  = nil;
-static double          lastLoggedElapsed = -1;
-static NSInteger       lastLoggedChapter = -1;
+NSString *currentASIN      = nil;
+NSString *currentContentID = nil;
+
+NSMutableArray  *allChapters       = nil;
+double           totalBookDuration = 0.0;
+static double    lastLoggedElapsed = -1;
+static NSInteger lastLoggedChapter = -1;
 
 @implementation AudibleMetadataCapture
 + (BOOL)isSafeClassForKVC:(NSString *)className
