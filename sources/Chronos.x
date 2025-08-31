@@ -1,0 +1,248 @@
+#import "Chronos.h"
+
+static NSMutableArray *allChapters       = nil;
+static double          totalBookDuration = 0.0;
+static NSString       *currentASIN       = nil;
+static NSString       *currentContentID  = nil;
+
+@interface AudibleMetadataCapture : NSObject
++ (void)calculateBookProgress:(NSDictionary *)nowPlayingInfo;
++ (void)processChapterData:(id)chapterObject withContext:(NSString *)context;
++ (void)calculateTotalBookDuration;
+@end
+
+@implementation AudibleMetadataCapture
++ (BOOL)isSafeClassForKVC:(NSString *)className
+{
+    return [className containsString:@"Audible"];
+}
+
++ (void)initialize
+{
+    if (self == [AudibleMetadataCapture class])
+    {
+        allChapters       = [[NSMutableArray alloc] init];
+        totalBookDuration = 0.0;
+        currentASIN       = nil;
+        currentContentID  = nil;
+    }
+}
+
++ (void)processChapterData:(id)chapterObject withContext:(NSString *)context
+{
+    @try
+    {
+        NSString *title  = nil;
+        NSNumber *length = nil;
+        @try
+        {
+            title  = [chapterObject valueForKey:@"title"];
+            length = [chapterObject valueForKey:@"length"];
+            if (!length)
+                length = [chapterObject valueForKey:@"duration"];
+        }
+        @catch (__unused NSException *e)
+        {
+        }
+        if (title && length)
+        {
+            BOOL exists = NO;
+            for (NSDictionary *ch in allChapters)
+            {
+                if ([ch[@"title"] isEqualToString:title])
+                {
+                    exists = YES;
+                    break;
+                }
+            }
+            if (!exists)
+            {
+                [allChapters addObject:@{@"title" : title, @"duration" : length}];
+                [self calculateTotalBookDuration];
+            }
+        }
+    }
+    @catch (__unused NSException *e)
+    {
+    }
+}
+
++ (void)calculateTotalBookDuration
+{
+    @try
+    {
+        totalBookDuration = 0.0;
+        for (NSDictionary *chapter in allChapters)
+        {
+            NSNumber *duration = chapter[@"duration"];
+            if (duration)
+                totalBookDuration += [duration doubleValue] / 1000.0;
+        }
+    }
+    @catch (__unused NSException *e)
+    {
+    }
+}
+
++ (void)captureMetadataFromObject:(id)object withContext:(NSString *)context
+{
+    if (!object)
+        return;
+    @try
+    {
+        NSString *classNameStr = NSStringFromClass([object class]);
+        if ([classNameStr isEqualToString:@"AudiblePlayer.Chapter"])
+        {
+            [self processChapterData:object withContext:context];
+        }
+        if ([self isSafeClassForKVC:classNameStr])
+        {
+            [self scanObjectForIdentifiers:object inClass:classNameStr];
+        }
+    }
+    @catch (__unused NSException *e)
+    {
+    }
+}
+
++ (void)scanObjectForIdentifiers:(id)object inClass:(NSString *)className
+{
+    if (![self isSafeClassForKVC:className])
+        return;
+    @try
+    {
+        if ([className isEqualToString:@"Audible.RemoteSubscriptionDetail"] ||
+            [className isEqualToString:@"AudibleAssetRepo.AssetMetadata"])
+        {
+            NSString *asinValue = nil;
+            @try
+            {
+                asinValue = [object valueForKey:@"asin"];
+            }
+            @catch (__unused NSException *e)
+            {
+            }
+            if (asinValue && [asinValue isKindOfClass:[NSString class]])
+            {
+                if ([className isEqualToString:@"Audible.RemoteSubscriptionDetail"])
+                    currentASIN = asinValue;
+                if ([className isEqualToString:@"AudibleAssetRepo.AssetMetadata"])
+                    currentContentID = asinValue;
+            }
+        }
+    }
+    @catch (__unused NSException *e)
+    {
+    }
+}
+
++ (void)calculateBookProgress:(NSDictionary *)nowPlayingInfo
+{
+    @try
+    {
+        NSString *currentTitle    = nowPlayingInfo[MPMediaItemPropertyTitle];
+        NSNumber *chapterPosition = nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime];
+        if (!currentTitle || !chapterPosition || totalBookDuration <= 0.0 ||
+            [allChapters count] == 0)
+            return;
+        NSInteger currentChapterIndex = -1;
+        for (NSInteger i = 0; i < [allChapters count]; i++)
+        {
+            NSDictionary *chapter = allChapters[i];
+            if ([chapter[@"title"] isEqualToString:currentTitle])
+            {
+                currentChapterIndex = i;
+                break;
+            }
+        }
+        if (currentChapterIndex < 0)
+            return;
+        double totalElapsedSeconds = 0.0;
+        for (NSInteger i = 0; i < currentChapterIndex; i++)
+        {
+            NSNumber *chapterDur = allChapters[i][@"duration"];
+            if (chapterDur)
+                totalElapsedSeconds += [chapterDur doubleValue] / 1000.0;
+        }
+        totalElapsedSeconds += [chapterPosition doubleValue];
+        double percent        = (totalElapsedSeconds / totalBookDuration) * 100.0;
+        int    elapsedHours   = (int) (totalElapsedSeconds / 3600);
+        int    elapsedMinutes = (int) ((totalElapsedSeconds - (elapsedHours * 3600)) / 60);
+        int    elapsedSecs    = (int) totalElapsedSeconds % 60;
+        int    totalHours     = (int) (totalBookDuration / 3600);
+        int    totalMinutes   = (int) ((totalBookDuration - (totalHours * 3600)) / 60);
+        int    totalSecs      = (int) totalBookDuration % 60;
+        NSLog(@"[Chronos] PROGRESS: %.1f%% complete (%02d:%02d:%02d / %02d:%02d:%02d) - Chapter "
+              @"%ld of %ld%@%@",
+              percent, elapsedHours, elapsedMinutes, elapsedSecs, totalHours, totalMinutes,
+              totalSecs, (long) (currentChapterIndex + 1), (long) [allChapters count],
+              currentASIN ? [[NSString stringWithFormat:@" - ASIN: %@", currentASIN] description]
+                          : @"",
+              currentContentID
+                  ? [[NSString stringWithFormat:@" - Content ID: %@", currentContentID] description]
+                  : @"");
+    }
+    @catch (__unused NSException *e)
+    {
+    }
+}
+
+@end
+
+%hook MPNowPlayingInfoCenter
+
+- (void)setNowPlayingInfo:(NSDictionary *)nowPlayingInfo
+{
+    if (nowPlayingInfo)
+    {
+        [AudibleMetadataCapture calculateBookProgress:nowPlayingInfo];
+    }
+    %orig;
+}
+
+%end
+
+%hook NSObject
+
+- (instancetype)init
+{
+    id    result      = %orig;
+    Class resultClass = object_getClass(result);
+    if (resultClass)
+    {
+        const char *className = class_getName(resultClass);
+        if (className)
+        {
+            NSString *classNameStr = [NSString stringWithUTF8String:className];
+            if ([AudibleMetadataCapture isSafeClassForKVC:classNameStr])
+            {
+                [AudibleMetadataCapture captureMetadataFromObject:result withContext:@"init"];
+            }
+        }
+    }
+    return result;
+}
+
+- (id)valueForKey:(NSString *)key
+{
+    id result = %orig;
+    if (result && [result isKindOfClass:[NSString class]])
+    {
+        NSString *className = NSStringFromClass([self class]);
+        if ([key isEqualToString:@"asin"])
+        {
+            if ([className isEqualToString:@"Audible.RemoteSubscriptionDetail"])
+                currentASIN = result;
+            if ([className isEqualToString:@"AudibleAssetRepo.AssetMetadata"])
+                currentContentID = result;
+        }
+    }
+    return result;
+}
+
+%end
+
+%ctor
+{
+    NSLog(@"[Chronos] Tweak initialized");
+}
