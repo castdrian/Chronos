@@ -204,53 +204,43 @@ static NSString       *currentContentID  = nil;
 }
 
 // Proper class method implementation
+// Generic extraction: grab ASIN and Content ID from known classes and properties
 + (void)scanObjectForIdentifiers:(id)object inClass:(NSString *)className
 {
-    // Double-check class safety before scanning
     if (![self isSafeClassForKVC:className])
         return;
     @try
     {
-        NSArray *targetProperties =
-            @[ @"asin", @"ASIN", @"productId", @"contentId", @"content_id", @"identifier" ];
-        for (NSString *property in targetProperties)
+        // Target only the known reliable classes and property
+        if ([className isEqualToString:@"Audible.RemoteSubscriptionDetail"] ||
+            [className isEqualToString:@"AudibleAssetRepo.AssetMetadata"])
         {
+            id asinValue = nil;
             @try
             {
-                id value = [object valueForKey:property];
-                if (value && [value isKindOfClass:[NSString class]])
-                {
-                    NSString *stringValue = (NSString *) value;
-                    if ([stringValue length] == 10 && [stringValue isEqualToString:@"B075YCVTQW"] &&
-                        ![currentASIN isEqualToString:stringValue])
-                    {
-                        currentASIN = stringValue;
-                        ChronosLogIdentifier(@"ASIN", currentASIN, className, property,
-                                             @"scanObjectForIdentifiers");
-                    }
-                    if ([stringValue isEqualToString:@"1774248182"] &&
-                        ![currentContentID isEqualToString:stringValue])
-                    {
-                        currentContentID = stringValue;
-                        ChronosLogIdentifier(@"Content ID", currentContentID, className, property,
-                                             @"scanObjectForIdentifiers");
-                    }
-                }
-                else if (value && [value isKindOfClass:[NSNumber class]])
-                {
-                    NSString *numberString = [value stringValue];
-                    if ([numberString isEqualToString:@"1774248182"] &&
-                        ![currentContentID isEqualToString:numberString])
-                    {
-                        currentContentID = numberString;
-                        ChronosLogIdentifier(@"Content ID (numeric)", currentContentID, className,
-                                             property, @"scanObjectForIdentifiers");
-                    }
-                }
+                asinValue = [object valueForKey:@"asin"];
             }
             @catch (NSException *ex)
             {
-                // Continue to next property
+                asinValue = nil;
+            }
+            if (asinValue && [asinValue isKindOfClass:[NSString class]])
+            {
+                // Store ASIN and/or Content ID generically
+                if ([className isEqualToString:@"Audible.RemoteSubscriptionDetail"] &&
+                    ![currentASIN isEqualToString:asinValue])
+                {
+                    currentASIN = asinValue;
+                    ChronosLogIdentifier(@"ASIN", currentASIN, className, @"asin",
+                                         @"scanObjectForIdentifiers");
+                }
+                if ([className isEqualToString:@"AudibleAssetRepo.AssetMetadata"] &&
+                    ![currentContentID isEqualToString:asinValue])
+                {
+                    currentContentID = asinValue;
+                    ChronosLogIdentifier(@"Content ID", currentContentID, className, @"asin",
+                                         @"scanObjectForIdentifiers");
+                }
             }
         }
     }
@@ -410,22 +400,21 @@ static NSString       *currentContentID  = nil;
 {
     id result = %orig;
 
-    // Only check if we got a string result and it matches our targets
+    // Only check if we got a string result and it's from a known class/property
     if (result && [result isKindOfClass:[NSString class]])
     {
         NSString *stringResult = (NSString *) result;
         NSString *className    = NSStringFromClass([self class]);
 
-        // Check for the specific ASIN we want (B075YCVTQW)
-        if ([stringResult isEqualToString:@"B075YCVTQW"] &&
+        if ([key isEqualToString:@"asin"] &&
+            [className isEqualToString:@"Audible.RemoteSubscriptionDetail"] &&
             ![currentASIN isEqualToString:stringResult])
         {
             currentASIN = stringResult;
             ChronosLogIdentifier(@"ASIN", currentASIN, className, key, @"valueForKey");
         }
-
-        // Check for the specific Content ID we want (1774248182)
-        if ([stringResult isEqualToString:@"1774248182"] &&
+        if ([key isEqualToString:@"asin"] &&
+            [className isEqualToString:@"AudibleAssetRepo.AssetMetadata"] &&
             ![currentContentID isEqualToString:stringResult])
         {
             currentContentID = stringResult;
