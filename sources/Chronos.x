@@ -4,6 +4,8 @@ static NSMutableArray *allChapters       = nil;
 static double          totalBookDuration = 0.0;
 static NSString       *currentASIN       = nil;
 static NSString       *currentContentID  = nil;
+static double          lastLoggedElapsed = -1;
+static NSInteger       lastLoggedChapter = -1;
 
 @interface AudibleMetadataCapture : NSObject
 + (void)calculateBookProgress:(NSDictionary *)nowPlayingInfo;
@@ -165,6 +167,12 @@ static NSString       *currentContentID  = nil;
                 totalElapsedSeconds += [chapterDur doubleValue] / 1000.0;
         }
         totalElapsedSeconds += [chapterPosition doubleValue];
+
+        if (fabs(totalElapsedSeconds - lastLoggedElapsed) < 1.0 &&
+            currentChapterIndex == lastLoggedChapter)
+            return;
+        lastLoggedElapsed     = totalElapsedSeconds;
+        lastLoggedChapter     = currentChapterIndex;
         double percent        = (totalElapsedSeconds / totalBookDuration) * 100.0;
         int    elapsedHours   = (int) (totalElapsedSeconds / 3600);
         int    elapsedMinutes = (int) ((totalElapsedSeconds - (elapsedHours * 3600)) / 60);
