@@ -8,7 +8,7 @@ TARGET := iphone:clang:latest:15.0
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = Chronos
-$(TWEAK_NAME)_FILES = $(shell find sources -name "*.x*" -o -name "*.m*" -o -name "*.swift*")
+$(TWEAK_NAME)_FILES = $(shell find sources -name "*.x*" -o -name "*.m*")
 $(TWEAK_NAME)_CFLAGS = -fobjc-arc -DPACKAGE_VERSION='@"$(THEOS_PACKAGE_BASE_VERSION)"' -DCOMMIT_HASH='@"$(COMMIT_HASH)"' -I$(THEOS_PROJECT_DIR)/headers
 $(TWEAK_NAME)_FRAMEWORKS = UIKit Foundation UniformTypeIdentifiers UserNotifications Security
 
