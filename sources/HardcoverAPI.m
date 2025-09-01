@@ -46,7 +46,9 @@
         return;
     }
 
-    [self makeGraphQLRequest:@"query User { me { id username name image { url } } }"
+    [self makeGraphQLRequest:@"query Me { me { id username birthdate books_count flair "
+                             @"followers_count followed_users_count location name pro "
+                             @"pronoun_personal pronoun_possessive sign_in_count image { url } } }"
               withCompletion:^(NSDictionary *response, NSError *error) {
                   if (error)
                   {
@@ -73,12 +75,22 @@
                       return;
                   }
 
-                  NSDictionary  *userDict = meArray[0];
-                  HardcoverUser *user     = [[HardcoverUser alloc] init];
-                  user.userId             = userDict[@"id"];
-                  user.username           = userDict[@"username"];
-                  user.name               = userDict[@"name"];
-                  user.imageURL           = userDict[@"image"][@"url"];
+                  NSDictionary  *userDict   = meArray[0];
+                  HardcoverUser *user       = [[HardcoverUser alloc] init];
+                  user.userId               = userDict[@"id"];
+                  user.username             = userDict[@"username"];
+                  user.name                 = userDict[@"name"];
+                  user.imageURL             = userDict[@"image"][@"url"];
+                  user.birthdate            = userDict[@"birthdate"];
+                  user.flair                = userDict[@"flair"];
+                  user.location             = userDict[@"location"];
+                  user.pronoun_personal     = userDict[@"pronoun_personal"];
+                  user.pronoun_possessive   = userDict[@"pronoun_possessive"];
+                  user.books_count          = userDict[@"books_count"];
+                  user.followers_count      = userDict[@"followers_count"];
+                  user.followed_users_count = userDict[@"followed_users_count"];
+                  user.sign_in_count        = userDict[@"sign_in_count"];
+                  user.pro                  = [userDict[@"pro"] boolValue];
 
                   self.currentUser  = user;
                   self.isAuthorized = YES;
@@ -102,7 +114,12 @@
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     [request setHTTPMethod:@"POST"];
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    [request setValue:_apiToken forHTTPHeaderField:@"Authorization"];
+    // Send token as Bearer value
+    if (_apiToken.length > 0)
+    {
+        [request setValue:[NSString stringWithFormat:@"Bearer %@", _apiToken]
+            forHTTPHeaderField:@"Authorization"];
+    }
 
     NSDictionary *body = @{@"query" : query};
     NSError      *jsonError;

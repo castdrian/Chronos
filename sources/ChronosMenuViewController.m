@@ -23,11 +23,15 @@ extern double          totalBookDuration;
 @property (nonatomic, strong) UIButton                *asinCopyButton;
 @property (nonatomic, strong) UIButton                *contentIdCopyButton;
 @property (nonatomic, strong) UIView                  *hardcoverSection;
+@property (nonatomic, strong) UILabel                 *hardcoverHeaderLabel;
 @property (nonatomic, strong) UITextField             *apiTokenField;
 @property (nonatomic, strong) UIButton                *authorizeButton;
 @property (nonatomic, strong) UIView                  *userProfileView;
 @property (nonatomic, strong) UIImageView             *userAvatarView;
 @property (nonatomic, strong) UILabel                 *userNameLabel;
+@property (nonatomic, strong) UIStackView             *userStatsStack;
+@property (nonatomic, strong) UILabel                 *booksCountLabel;
+@property (nonatomic, strong) UILabel                 *followersCountLabel;
 @property (nonatomic, strong) UIActivityIndicatorView *hardcoverSpinner;
 @end
 
@@ -230,6 +234,13 @@ extern double          totalBookDuration;
     UIView *section                                   = [[UIView alloc] init];
     section.translatesAutoresizingMaskIntoConstraints = NO;
 
+    // Header: "Hardcover"
+    self.hardcoverHeaderLabel           = [[UILabel alloc] init];
+    self.hardcoverHeaderLabel.text      = @"Hardcover";
+    self.hardcoverHeaderLabel.font      = [UIFont systemFontOfSize:18 weight:UIFontWeightSemibold];
+    self.hardcoverHeaderLabel.textColor = UIColor.labelColor;
+    self.hardcoverHeaderLabel.translatesAutoresizingMaskIntoConstraints = NO;
+
     self.apiTokenField                     = [[UITextField alloc] init];
     self.apiTokenField.backgroundColor     = UIColor.tertiarySystemBackgroundColor;
     self.apiTokenField.layer.cornerRadius  = 8;
@@ -267,13 +278,20 @@ extern double          totalBookDuration;
     self.userProfileView        = [self setupUserProfileView];
     self.userProfileView.hidden = YES;
 
+    [section addSubview:self.hardcoverHeaderLabel];
     [section addSubview:self.apiTokenField];
     [section addSubview:self.authorizeButton];
     [section addSubview:self.hardcoverSpinner];
     [section addSubview:self.userProfileView];
 
     [NSLayoutConstraint activateConstraints:@[
-        [self.apiTokenField.topAnchor constraintEqualToAnchor:section.topAnchor],
+        [self.hardcoverHeaderLabel.topAnchor constraintEqualToAnchor:section.topAnchor],
+        [self.hardcoverHeaderLabel.leadingAnchor constraintEqualToAnchor:section.leadingAnchor],
+        [self.hardcoverHeaderLabel.trailingAnchor
+            constraintLessThanOrEqualToAnchor:section.trailingAnchor],
+
+        [self.apiTokenField.topAnchor constraintEqualToAnchor:self.hardcoverHeaderLabel.bottomAnchor
+                                                     constant:8],
         [self.apiTokenField.leadingAnchor constraintEqualToAnchor:section.leadingAnchor],
         [self.apiTokenField.trailingAnchor constraintEqualToAnchor:section.trailingAnchor],
         [self.apiTokenField.heightAnchor constraintEqualToConstant:44],
@@ -289,11 +307,12 @@ extern double          totalBookDuration;
         [self.hardcoverSpinner.centerYAnchor
             constraintEqualToAnchor:self.authorizeButton.centerYAnchor],
 
-        [self.userProfileView.topAnchor constraintEqualToAnchor:self.apiTokenField.bottomAnchor
-                                                       constant:12],
+        [self.userProfileView.topAnchor
+            constraintEqualToAnchor:self.hardcoverHeaderLabel.bottomAnchor
+                           constant:8],
         [self.userProfileView.leadingAnchor constraintEqualToAnchor:section.leadingAnchor],
         [self.userProfileView.trailingAnchor constraintEqualToAnchor:section.trailingAnchor],
-        [self.userProfileView.heightAnchor constraintEqualToConstant:60],
+        [self.userProfileView.heightAnchor constraintGreaterThanOrEqualToConstant:60],
 
         [section.bottomAnchor constraintEqualToAnchor:self.authorizeButton.bottomAnchor]
     ]];
@@ -317,14 +336,67 @@ extern double          totalBookDuration;
     self.userAvatarView.contentMode         = UIViewContentModeScaleAspectFill;
     self.userAvatarView.translatesAutoresizingMaskIntoConstraints = NO;
 
-    // User name label
-    self.userNameLabel           = [[UILabel alloc] init];
-    self.userNameLabel.font      = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
-    self.userNameLabel.textColor = UIColor.labelColor;
+    // Name + username stacked vertically
+    self.userNameLabel               = [[UILabel alloc] init];
+    self.userNameLabel.font          = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
+    self.userNameLabel.textColor     = UIColor.labelColor;
+    self.userNameLabel.numberOfLines = 1;
     self.userNameLabel.translatesAutoresizingMaskIntoConstraints = NO;
 
+    UILabel *usernameLabel      = [[UILabel alloc] init];
+    usernameLabel.font          = [UIFont systemFontOfSize:13 weight:UIFontWeightRegular];
+    usernameLabel.textColor     = UIColor.secondaryLabelColor;
+    usernameLabel.numberOfLines = 1;
+    usernameLabel.tag           = 500; // find later
+    usernameLabel.translatesAutoresizingMaskIntoConstraints = NO;
+
+    UIStackView *nameStack =
+        [[UIStackView alloc] initWithArrangedSubviews:@[ self.userNameLabel, usernameLabel ]];
+    nameStack.axis                                      = UILayoutConstraintAxisVertical;
+    nameStack.spacing                                   = 2;
+    nameStack.alignment                                 = UIStackViewAlignmentLeading;
+    nameStack.translatesAutoresizingMaskIntoConstraints = NO;
+
+    // Social stats: books and followers
+    self.booksCountLabel               = [[UILabel alloc] init];
+    self.booksCountLabel.font          = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
+    self.booksCountLabel.textColor     = UIColor.labelColor;
+    self.followersCountLabel           = [[UILabel alloc] init];
+    self.followersCountLabel.font      = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
+    self.followersCountLabel.textColor = UIColor.labelColor;
+
+    UILabel *booksCaption  = [[UILabel alloc] init];
+    booksCaption.text      = @"Books";
+    booksCaption.font      = [UIFont systemFontOfSize:12 weight:UIFontWeightRegular];
+    booksCaption.textColor = UIColor.secondaryLabelColor;
+
+    UILabel *followersCaption  = [[UILabel alloc] init];
+    followersCaption.text      = @"Followers";
+    followersCaption.font      = [UIFont systemFontOfSize:12 weight:UIFontWeightRegular];
+    followersCaption.textColor = UIColor.secondaryLabelColor;
+
+    UIStackView *booksStack =
+        [[UIStackView alloc] initWithArrangedSubviews:@[ self.booksCountLabel, booksCaption ]];
+    booksStack.axis      = UILayoutConstraintAxisVertical;
+    booksStack.alignment = UIStackViewAlignmentCenter;
+    booksStack.spacing   = 0;
+
+    UIStackView *followersStack = [[UIStackView alloc]
+        initWithArrangedSubviews:@[ self.followersCountLabel, followersCaption ]];
+    followersStack.axis         = UILayoutConstraintAxisVertical;
+    followersStack.alignment    = UIStackViewAlignmentCenter;
+    followersStack.spacing      = 0;
+
+    self.userStatsStack =
+        [[UIStackView alloc] initWithArrangedSubviews:@[ booksStack, followersStack ]];
+    self.userStatsStack.axis      = UILayoutConstraintAxisHorizontal;
+    self.userStatsStack.spacing   = 20;
+    self.userStatsStack.alignment = UIStackViewAlignmentCenter;
+    self.userStatsStack.translatesAutoresizingMaskIntoConstraints = NO;
+
     [profileView addSubview:self.userAvatarView];
-    [profileView addSubview:self.userNameLabel];
+    [profileView addSubview:nameStack];
+    [profileView addSubview:self.userStatsStack];
 
     [NSLayoutConstraint activateConstraints:@[
         [self.userAvatarView.leadingAnchor constraintEqualToAnchor:profileView.leadingAnchor
@@ -333,12 +405,15 @@ extern double          totalBookDuration;
         [self.userAvatarView.widthAnchor constraintEqualToConstant:40],
         [self.userAvatarView.heightAnchor constraintEqualToConstant:40],
 
-        [self.userNameLabel.leadingAnchor constraintEqualToAnchor:self.userAvatarView.trailingAnchor
-                                                         constant:12],
-        [self.userNameLabel.centerYAnchor constraintEqualToAnchor:profileView.centerYAnchor],
-        [self.userNameLabel.trailingAnchor
-            constraintLessThanOrEqualToAnchor:profileView.trailingAnchor
-                                     constant:-12]
+        [nameStack.leadingAnchor constraintEqualToAnchor:self.userAvatarView.trailingAnchor
+                                                constant:12],
+        [nameStack.centerYAnchor constraintEqualToAnchor:profileView.centerYAnchor],
+        [self.userStatsStack.leadingAnchor
+            constraintGreaterThanOrEqualToAnchor:nameStack.trailingAnchor
+                                        constant:12],
+        [self.userStatsStack.centerYAnchor constraintEqualToAnchor:profileView.centerYAnchor],
+        [self.userStatsStack.trailingAnchor constraintEqualToAnchor:profileView.trailingAnchor
+                                                           constant:-12]
     ]];
 
     // Add tap gesture to allow token editing
@@ -556,8 +631,18 @@ extern double          totalBookDuration;
 
 - (void)updateHardcoverUI:(HardcoverUser *)user
 {
-    self.userNameLabel.text = [NSString
-        stringWithFormat:@"%@ (@%@)", user.name ?: @"Unknown", user.username ?: @"unknown"];
+    self.userNameLabel.text = user.name ?: @"Unknown";
+    UILabel *usernameLabel  = [self.userProfileView viewWithTag:500];
+    if ([usernameLabel isKindOfClass:[UILabel class]])
+    {
+        ((UILabel *) usernameLabel).text =
+            [NSString stringWithFormat:@"@%@", user.username ?: @"unknown"];
+    }
+
+    // Stats
+    self.booksCountLabel.text = user.books_count ? [user.books_count stringValue] : @"0";
+    self.followersCountLabel.text =
+        user.followers_count ? [user.followers_count stringValue] : @"0";
 
     // Load user avatar
     if (user.imageURL && user.imageURL.length > 0)
@@ -571,31 +656,31 @@ extern double          totalBookDuration;
     }
 
     // Update UI layout
-    [UIView animateWithDuration:0.3
-                     animations:^{
-                         self.apiTokenField.hidden   = YES;
-                         self.authorizeButton.hidden = YES;
-                         self.userProfileView.hidden = NO;
+    [UIView
+        animateWithDuration:0.3
+                 animations:^{
+                     self.apiTokenField.hidden   = YES;
+                     self.authorizeButton.hidden = YES;
+                     self.userProfileView.hidden = NO;
 
-                         // Update bottom constraint
-                         NSLayoutConstraint *bottomConstraint = nil;
-                         for (NSLayoutConstraint *constraint in self.hardcoverSection.constraints)
+                     // Update bottom constraint
+                     NSLayoutConstraint *bottomConstraint = nil;
+                     for (NSLayoutConstraint *constraint in self.hardcoverSection.constraints)
+                     {
+                         if (constraint.firstAnchor == self.hardcoverSection.bottomAnchor)
                          {
-                             if (constraint.firstAnchor == self.hardcoverSection.bottomAnchor)
-                             {
-                                 bottomConstraint = constraint;
-                                 break;
-                             }
+                             bottomConstraint = constraint;
+                             break;
                          }
-                         if (bottomConstraint)
-                         {
-                             [self.hardcoverSection removeConstraint:bottomConstraint];
-                         }
-
-                         [self.hardcoverSection.bottomAnchor
-                             constraintEqualToAnchor:self.userProfileView.bottomAnchor]
-                             .active = YES;
-                     }];
+                     }
+                     if (bottomConstraint)
+                     {
+                         [self.hardcoverSection removeConstraint:bottomConstraint];
+                     }
+                     // Anchor section bottom to profile bottom to remove extra space
+                     [[self.hardcoverSection.bottomAnchor
+                         constraintEqualToAnchor:self.userProfileView.bottomAnchor] setActive:YES];
+                 }];
 }
 
 - (void)showHardcoverLoginUI
@@ -606,31 +691,30 @@ extern double          totalBookDuration;
         self.apiTokenField.text = api.apiToken;
     }
 
-    [UIView animateWithDuration:0.3
-                     animations:^{
-                         self.apiTokenField.hidden   = NO;
-                         self.authorizeButton.hidden = NO;
-                         self.userProfileView.hidden = YES;
+    [UIView
+        animateWithDuration:0.3
+                 animations:^{
+                     self.apiTokenField.hidden   = NO;
+                     self.authorizeButton.hidden = NO;
+                     self.userProfileView.hidden = YES;
 
-                         // Update bottom constraint
-                         NSLayoutConstraint *bottomConstraint = nil;
-                         for (NSLayoutConstraint *constraint in self.hardcoverSection.constraints)
+                     // Update bottom constraint
+                     NSLayoutConstraint *bottomConstraint = nil;
+                     for (NSLayoutConstraint *constraint in self.hardcoverSection.constraints)
+                     {
+                         if (constraint.firstAnchor == self.hardcoverSection.bottomAnchor)
                          {
-                             if (constraint.firstAnchor == self.hardcoverSection.bottomAnchor)
-                             {
-                                 bottomConstraint = constraint;
-                                 break;
-                             }
+                             bottomConstraint = constraint;
+                             break;
                          }
-                         if (bottomConstraint)
-                         {
-                             [self.hardcoverSection removeConstraint:bottomConstraint];
-                         }
-
-                         [self.hardcoverSection.bottomAnchor
-                             constraintEqualToAnchor:self.authorizeButton.bottomAnchor]
-                             .active = YES;
-                     }];
+                     }
+                     if (bottomConstraint)
+                     {
+                         [self.hardcoverSection removeConstraint:bottomConstraint];
+                     }
+                     [[self.hardcoverSection.bottomAnchor
+                         constraintEqualToAnchor:self.authorizeButton.bottomAnchor] setActive:YES];
+                 }];
 }
 
 - (void)editHardcoverToken
