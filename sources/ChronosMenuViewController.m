@@ -1,4 +1,5 @@
 #import "ChronosMenuViewController.h"
+#import "HardcoverAPI.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,6 +22,13 @@ extern double          totalBookDuration;
 @property (nonatomic, strong) UILabel                 *contentIdLabel;
 @property (nonatomic, strong) UIButton                *asinCopyButton;
 @property (nonatomic, strong) UIButton                *contentIdCopyButton;
+@property (nonatomic, strong) UIView                  *hardcoverSection;
+@property (nonatomic, strong) UITextField             *apiTokenField;
+@property (nonatomic, strong) UIButton                *authorizeButton;
+@property (nonatomic, strong) UIView                  *userProfileView;
+@property (nonatomic, strong) UIImageView             *userAvatarView;
+@property (nonatomic, strong) UILabel                 *userNameLabel;
+@property (nonatomic, strong) UIActivityIndicatorView *hardcoverSpinner;
 @end
 
 @implementation ChronosMenuViewController
@@ -35,6 +43,7 @@ extern double          totalBookDuration;
     self.navigationController.navigationBar.prefersLargeTitles = NO;
     [self setupUI];
     [self loadData];
+    [self checkHardcoverAuth];
 }
 
 - (void)setupUI
@@ -137,6 +146,36 @@ extern double          totalBookDuration;
     ]];
     stack.hidden = YES;
     stack.tag    = 101;
+
+    UIView *hardcoverCard             = [[UIView alloc] init];
+    hardcoverCard.backgroundColor     = UIColor.secondarySystemBackgroundColor;
+    hardcoverCard.layer.cornerRadius  = 14;
+    hardcoverCard.layer.masksToBounds = YES;
+    hardcoverCard.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:hardcoverCard];
+
+    self.hardcoverSection = [self setupHardcoverSection];
+    [hardcoverCard addSubview:self.hardcoverSection];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [hardcoverCard.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor
+                                                    constant:margin],
+        [hardcoverCard.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor
+                                                     constant:-margin],
+        [hardcoverCard.topAnchor constraintEqualToAnchor:card.bottomAnchor constant:spacing],
+        [hardcoverCard.bottomAnchor
+            constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor
+                                     constant:-margin],
+
+        [self.hardcoverSection.leadingAnchor constraintEqualToAnchor:hardcoverCard.leadingAnchor
+                                                            constant:margin],
+        [self.hardcoverSection.trailingAnchor constraintEqualToAnchor:hardcoverCard.trailingAnchor
+                                                             constant:-margin],
+        [self.hardcoverSection.topAnchor constraintEqualToAnchor:hardcoverCard.topAnchor
+                                                        constant:margin],
+        [self.hardcoverSection.bottomAnchor constraintEqualToAnchor:hardcoverCard.bottomAnchor
+                                                           constant:-margin]
+    ]];
 }
 
 - (UILabel *)labelWithFont:(CGFloat)size weight:(UIFontWeight)weight
@@ -184,6 +223,131 @@ extern double          totalBookDuration;
         [copyBtn.heightAnchor constraintEqualToConstant:copySize]
     ]];
     return block;
+}
+
+- (UIView *)setupHardcoverSection
+{
+    UIView *section                                   = [[UIView alloc] init];
+    section.translatesAutoresizingMaskIntoConstraints = NO;
+
+    self.apiTokenField                     = [[UITextField alloc] init];
+    self.apiTokenField.backgroundColor     = UIColor.tertiarySystemBackgroundColor;
+    self.apiTokenField.layer.cornerRadius  = 8;
+    self.apiTokenField.layer.masksToBounds = YES;
+    self.apiTokenField.placeholder         = @"Hardcover API Key";
+    self.apiTokenField.secureTextEntry     = YES;
+    self.apiTokenField.font = [UIFont monospacedSystemFontOfSize:14 weight:UIFontWeightRegular];
+    self.apiTokenField.translatesAutoresizingMaskIntoConstraints = NO;
+
+    UIView *paddingView             = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 12, 44)];
+    self.apiTokenField.leftView     = paddingView;
+    self.apiTokenField.leftViewMode = UITextFieldViewModeAlways;
+
+    UIView *rightPaddingView         = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 12, 44)];
+    self.apiTokenField.rightView     = rightPaddingView;
+    self.apiTokenField.rightViewMode = UITextFieldViewModeAlways;
+
+    self.authorizeButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.authorizeButton setTitle:@"Authorize" forState:UIControlStateNormal];
+    self.authorizeButton.backgroundColor = UIColor.systemBlueColor;
+    [self.authorizeButton setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+    self.authorizeButton.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
+    self.authorizeButton.layer.cornerRadius                        = 8;
+    self.authorizeButton.layer.masksToBounds                       = YES;
+    self.authorizeButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.authorizeButton addTarget:self
+                             action:@selector(authorizeHardcover)
+                   forControlEvents:UIControlEventTouchUpInside];
+
+    self.hardcoverSpinner = [[UIActivityIndicatorView alloc]
+        initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+    self.hardcoverSpinner.translatesAutoresizingMaskIntoConstraints = NO;
+    self.hardcoverSpinner.hidden                                    = YES;
+
+    self.userProfileView        = [self setupUserProfileView];
+    self.userProfileView.hidden = YES;
+
+    [section addSubview:self.apiTokenField];
+    [section addSubview:self.authorizeButton];
+    [section addSubview:self.hardcoverSpinner];
+    [section addSubview:self.userProfileView];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [self.apiTokenField.topAnchor constraintEqualToAnchor:section.topAnchor],
+        [self.apiTokenField.leadingAnchor constraintEqualToAnchor:section.leadingAnchor],
+        [self.apiTokenField.trailingAnchor constraintEqualToAnchor:section.trailingAnchor],
+        [self.apiTokenField.heightAnchor constraintEqualToConstant:44],
+
+        [self.authorizeButton.topAnchor constraintEqualToAnchor:self.apiTokenField.bottomAnchor
+                                                       constant:12],
+        [self.authorizeButton.leadingAnchor constraintEqualToAnchor:section.leadingAnchor],
+        [self.authorizeButton.trailingAnchor constraintEqualToAnchor:section.trailingAnchor],
+        [self.authorizeButton.heightAnchor constraintEqualToConstant:44],
+
+        [self.hardcoverSpinner.centerXAnchor
+            constraintEqualToAnchor:self.authorizeButton.centerXAnchor],
+        [self.hardcoverSpinner.centerYAnchor
+            constraintEqualToAnchor:self.authorizeButton.centerYAnchor],
+
+        [self.userProfileView.topAnchor constraintEqualToAnchor:self.apiTokenField.bottomAnchor
+                                                       constant:12],
+        [self.userProfileView.leadingAnchor constraintEqualToAnchor:section.leadingAnchor],
+        [self.userProfileView.trailingAnchor constraintEqualToAnchor:section.trailingAnchor],
+        [self.userProfileView.heightAnchor constraintEqualToConstant:60],
+
+        [section.bottomAnchor constraintEqualToAnchor:self.authorizeButton.bottomAnchor]
+    ]];
+
+    return section;
+}
+
+- (UIView *)setupUserProfileView
+{
+    UIView *profileView                                   = [[UIView alloc] init];
+    profileView.backgroundColor                           = UIColor.tertiarySystemBackgroundColor;
+    profileView.layer.cornerRadius                        = 8;
+    profileView.layer.masksToBounds                       = YES;
+    profileView.translatesAutoresizingMaskIntoConstraints = NO;
+
+    // Avatar image view
+    self.userAvatarView                     = [[UIImageView alloc] init];
+    self.userAvatarView.backgroundColor     = UIColor.systemGrayColor;
+    self.userAvatarView.layer.cornerRadius  = 20;
+    self.userAvatarView.layer.masksToBounds = YES;
+    self.userAvatarView.contentMode         = UIViewContentModeScaleAspectFill;
+    self.userAvatarView.translatesAutoresizingMaskIntoConstraints = NO;
+
+    // User name label
+    self.userNameLabel           = [[UILabel alloc] init];
+    self.userNameLabel.font      = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
+    self.userNameLabel.textColor = UIColor.labelColor;
+    self.userNameLabel.translatesAutoresizingMaskIntoConstraints = NO;
+
+    [profileView addSubview:self.userAvatarView];
+    [profileView addSubview:self.userNameLabel];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [self.userAvatarView.leadingAnchor constraintEqualToAnchor:profileView.leadingAnchor
+                                                          constant:12],
+        [self.userAvatarView.centerYAnchor constraintEqualToAnchor:profileView.centerYAnchor],
+        [self.userAvatarView.widthAnchor constraintEqualToConstant:40],
+        [self.userAvatarView.heightAnchor constraintEqualToConstant:40],
+
+        [self.userNameLabel.leadingAnchor constraintEqualToAnchor:self.userAvatarView.trailingAnchor
+                                                         constant:12],
+        [self.userNameLabel.centerYAnchor constraintEqualToAnchor:profileView.centerYAnchor],
+        [self.userNameLabel.trailingAnchor
+            constraintLessThanOrEqualToAnchor:profileView.trailingAnchor
+                                     constant:-12]
+    ]];
+
+    // Add tap gesture to allow token editing
+    UITapGestureRecognizer *tapGesture =
+        [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(editHardcoverToken)];
+    profileView.userInteractionEnabled = YES;
+    [profileView addGestureRecognizer:tapGesture];
+
+    return profileView;
 }
 
 - (void)loadData
@@ -282,29 +446,19 @@ extern double          totalBookDuration;
 
 - (void)dismissWithAnimation
 {
-    [self
-        dismissViewControllerAnimated:YES
-                           completion:^{
-                               UIWindow               *storedWindow = nil;
-                               UINavigationController *nav =
-                                   (UINavigationController *) self.navigationController;
-                               if (nav)
-                               {
-                                   storedWindow = objc_getAssociatedObject(nav, "chronosTopWindow");
-                                   if (storedWindow)
-                                   {
-                                       storedWindow.hidden = YES;
-                                       objc_setAssociatedObject(nav, "chronosTopWindow", nil,
-                                                                OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-                                   }
-                               }
-                           }];
+    [self dismissViewControllerAnimated:YES completion:nil];
 }
 
 - (void)viewWillDisappear:(BOOL)animated
 {
     [super viewWillDisappear:animated];
-    // Defensive: always hide top window when sheet is dismissed
+    // Window cleanup is handled in the dismissal completion block
+}
+
+- (void)viewDidDisappear:(BOOL)animated
+{
+    [super viewDidDisappear:animated];
+    // Ensure window cleanup happens even if dismissed by system (tap outside, etc.)
     UIWindow               *storedWindow = nil;
     UINavigationController *nav          = (UINavigationController *) self.navigationController;
     if (nav)
@@ -334,6 +488,199 @@ extern double          totalBookDuration;
         UIPasteboard.generalPasteboard.string = self.contentIdLabel.text;
         [self showCopiedToast:@"Content ID copied!"];
     }
+}
+
+- (void)checkHardcoverAuth
+{
+    HardcoverAPI *api = [HardcoverAPI sharedInstance];
+    if (api.apiToken && api.apiToken.length > 0)
+    {
+        self.apiTokenField.text = api.apiToken;
+        [self refreshHardcoverAuth];
+    }
+}
+
+- (void)refreshHardcoverAuth
+{
+    HardcoverAPI *api = [HardcoverAPI sharedInstance];
+    if (!api.apiToken || api.apiToken.length == 0)
+        return;
+
+    [api refreshUserWithCompletion:^(BOOL success, HardcoverUser *user, NSError *error) {
+        if (success && user)
+        {
+            [self updateHardcoverUI:user];
+        }
+        else
+        {
+            [self showHardcoverLoginUI];
+        }
+    }];
+}
+
+- (void)authorizeHardcover
+{
+    NSString *token = [self.apiTokenField.text
+        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
+    if (!token || token.length == 0)
+    {
+        [self showCopiedToast:@"Please enter your API token"];
+        return;
+    }
+
+    self.authorizeButton.hidden  = YES;
+    self.hardcoverSpinner.hidden = NO;
+    [self.hardcoverSpinner startAnimating];
+
+    HardcoverAPI *api = [HardcoverAPI sharedInstance];
+    [api setAPIToken:token];
+
+    [api authorizeWithCompletion:^(BOOL success, HardcoverUser *user, NSError *error) {
+        self.authorizeButton.hidden  = NO;
+        self.hardcoverSpinner.hidden = YES;
+        [self.hardcoverSpinner stopAnimating];
+
+        if (success && user)
+        {
+            [self updateHardcoverUI:user];
+            [self showCopiedToast:@"Successfully authorized!"];
+        }
+        else
+        {
+            NSString *errorMsg = error.localizedDescription ?: @"Authorization failed";
+            [self showCopiedToast:errorMsg];
+        }
+    }];
+}
+
+- (void)updateHardcoverUI:(HardcoverUser *)user
+{
+    self.userNameLabel.text = [NSString
+        stringWithFormat:@"%@ (@%@)", user.name ?: @"Unknown", user.username ?: @"unknown"];
+
+    // Load user avatar
+    if (user.imageURL && user.imageURL.length > 0)
+    {
+        [self loadImageFromURL:user.imageURL intoImageView:self.userAvatarView];
+    }
+    else
+    {
+        self.userAvatarView.image     = [UIImage systemImageNamed:@"person.circle.fill"];
+        self.userAvatarView.tintColor = UIColor.systemGrayColor;
+    }
+
+    // Update UI layout
+    [UIView animateWithDuration:0.3
+                     animations:^{
+                         self.apiTokenField.hidden   = YES;
+                         self.authorizeButton.hidden = YES;
+                         self.userProfileView.hidden = NO;
+
+                         // Update bottom constraint
+                         NSLayoutConstraint *bottomConstraint = nil;
+                         for (NSLayoutConstraint *constraint in self.hardcoverSection.constraints)
+                         {
+                             if (constraint.firstAnchor == self.hardcoverSection.bottomAnchor)
+                             {
+                                 bottomConstraint = constraint;
+                                 break;
+                             }
+                         }
+                         if (bottomConstraint)
+                         {
+                             [self.hardcoverSection removeConstraint:bottomConstraint];
+                         }
+
+                         [self.hardcoverSection.bottomAnchor
+                             constraintEqualToAnchor:self.userProfileView.bottomAnchor]
+                             .active = YES;
+                     }];
+}
+
+- (void)showHardcoverLoginUI
+{
+    HardcoverAPI *api = [HardcoverAPI sharedInstance];
+    if (api.apiToken && api.apiToken.length > 0)
+    {
+        self.apiTokenField.text = api.apiToken;
+    }
+
+    [UIView animateWithDuration:0.3
+                     animations:^{
+                         self.apiTokenField.hidden   = NO;
+                         self.authorizeButton.hidden = NO;
+                         self.userProfileView.hidden = YES;
+
+                         // Update bottom constraint
+                         NSLayoutConstraint *bottomConstraint = nil;
+                         for (NSLayoutConstraint *constraint in self.hardcoverSection.constraints)
+                         {
+                             if (constraint.firstAnchor == self.hardcoverSection.bottomAnchor)
+                             {
+                                 bottomConstraint = constraint;
+                                 break;
+                             }
+                         }
+                         if (bottomConstraint)
+                         {
+                             [self.hardcoverSection removeConstraint:bottomConstraint];
+                         }
+
+                         [self.hardcoverSection.bottomAnchor
+                             constraintEqualToAnchor:self.authorizeButton.bottomAnchor]
+                             .active = YES;
+                     }];
+}
+
+- (void)editHardcoverToken
+{
+    UIAlertController *alert = [UIAlertController
+        alertControllerWithTitle:@"Edit API Token"
+                         message:@"Do you want to change your Hardcover API token?"
+                  preferredStyle:UIAlertControllerStyleAlert];
+
+    UIAlertAction *editAction =
+        [UIAlertAction actionWithTitle:@"Edit"
+                                 style:UIAlertActionStyleDefault
+                               handler:^(UIAlertAction *action) { [self showHardcoverLoginUI]; }];
+
+    UIAlertAction *logoutAction =
+        [UIAlertAction actionWithTitle:@"Logout"
+                                 style:UIAlertActionStyleDestructive
+                               handler:^(UIAlertAction *action) {
+                                   [[HardcoverAPI sharedInstance] clearToken];
+                                   self.apiTokenField.text = @"";
+                                   [self showHardcoverLoginUI];
+                               }];
+
+    UIAlertAction *cancelAction = [UIAlertAction actionWithTitle:@"Cancel"
+                                                           style:UIAlertActionStyleCancel
+                                                         handler:nil];
+
+    [alert addAction:editAction];
+    [alert addAction:logoutAction];
+    [alert addAction:cancelAction];
+
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)loadImageFromURL:(NSString *)urlString intoImageView:(UIImageView *)imageView
+{
+    NSURL *url = [NSURL URLWithString:urlString];
+    if (!url)
+        return;
+
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession]
+          dataTaskWithURL:url
+        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+            if (data && !error)
+            {
+                UIImage *image = [UIImage imageWithData:data];
+                dispatch_async(dispatch_get_main_queue(), ^{ imageView.image = image; });
+            }
+        }];
+    [task resume];
 }
 - (void)showCopiedToast:(NSString *)msg
 {
