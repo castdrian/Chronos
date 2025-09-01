@@ -33,6 +33,10 @@ extern double          totalBookDuration;
 @property (nonatomic, strong) UILabel                 *booksCountLabel;
 @property (nonatomic, strong) UILabel                 *followersCountLabel;
 @property (nonatomic, strong) UIActivityIndicatorView *hardcoverSpinner;
+@property (nonatomic, strong) UIView                  *authorChip;
+@property (nonatomic, strong) UIView                  *chapterChip;
+@property (nonatomic, strong) UIView                  *progressChip;
+@property (nonatomic, strong) UIStackView             *detailsRow;
 @end
 
 @implementation ChronosMenuViewController
@@ -53,8 +57,8 @@ extern double          totalBookDuration;
 - (void)setupUI
 {
     CGFloat margin    = 16;
-    CGFloat spacing   = 10;
-    CGFloat blockFont = 16;
+    CGFloat spacing   = 8;
+    CGFloat blockFont = 18;
     CGFloat codeFont  = 15;
     CGFloat copySize  = 24;
 
@@ -73,6 +77,12 @@ extern double          totalBookDuration;
             constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor
                                      constant:-margin]
     ]];
+    [NSLayoutConstraint activateConstraints:@[
+        [card.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:margin],
+        [card.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-margin],
+        [card.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor
+                                       constant:margin]
+    ]];
 
     self.spinner                                           = [[UIActivityIndicatorView alloc]
         initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleLarge];
@@ -84,15 +94,18 @@ extern double          totalBookDuration;
         [self.spinner.centerYAnchor constraintEqualToAnchor:card.centerYAnchor]
     ]];
 
-    self.titleLabel    = [self labelWithFont:blockFont weight:UIFontWeightMedium];
-    self.authorLabel   = [self labelWithFont:blockFont weight:UIFontWeightRegular];
-    self.chapterLabel  = [self labelWithFont:blockFont weight:UIFontWeightRegular];
-    self.progressLabel = [self labelWithFont:blockFont weight:UIFontWeightRegular];
+    self.titleLabel              = [self labelWithFont:blockFont weight:UIFontWeightSemibold];
+    self.authorLabel             = [self labelWithFont:13 weight:UIFontWeightRegular];
+    self.chapterLabel            = [self labelWithFont:13 weight:UIFontWeightRegular];
+    self.progressLabel           = [self labelWithFont:13 weight:UIFontWeightRegular];
+    self.authorLabel.textColor   = UIColor.secondaryLabelColor;
+    self.chapterLabel.textColor  = UIColor.secondaryLabelColor;
+    self.progressLabel.textColor = UIColor.secondaryLabelColor;
 
     UILabel  *asinLabel      = nil;
     UIButton *asinCopyButton = nil;
     UILabel  *asinTitleLabel = [self labelWithFont:13 weight:UIFontWeightSemibold];
-    asinTitleLabel.text      = @"ASIN";
+    asinTitleLabel.text      = @"ASIN:";
     self.asinBlock           = [self codeBlockWithLabel:&asinLabel
                                        button:&asinCopyButton
                                          font:codeFont
@@ -103,7 +116,7 @@ extern double          totalBookDuration;
     UILabel  *contentIdLabel      = nil;
     UIButton *contentIdCopyButton = nil;
     UILabel  *contentIdTitleLabel = [self labelWithFont:13 weight:UIFontWeightSemibold];
-    contentIdTitleLabel.text      = @"Content ID";
+    contentIdTitleLabel.text      = @"Content ID:";
     self.contentIdBlock           = [self codeBlockWithLabel:&contentIdLabel
                                             button:&contentIdCopyButton
                                               font:codeFont
@@ -111,33 +124,62 @@ extern double          totalBookDuration;
     self.contentIdLabel           = contentIdLabel;
     self.contentIdCopyButton      = contentIdCopyButton;
 
-    UIStackView *metaStack = [[UIStackView alloc] initWithArrangedSubviews:@[
-        self.titleLabel, self.authorLabel, self.chapterLabel, self.progressLabel
-    ]];
-    metaStack.axis         = UILayoutConstraintAxisVertical;
-    metaStack.spacing      = spacing;
+    self.authorChip   = [self chipWithIcon:@"person.fill" label:self.authorLabel];
+    self.chapterChip  = [self chipWithIcon:@"bookmark.fill" label:self.chapterLabel];
+    self.progressChip = [self chipWithIcon:@"clock.fill" label:self.progressLabel];
+
+    self.detailsRow                                           = [[UIStackView alloc]
+        initWithArrangedSubviews:@[ self.authorChip, self.chapterChip, self.progressChip ]];
+    self.detailsRow.axis                                      = UILayoutConstraintAxisHorizontal;
+    self.detailsRow.spacing                                   = 6;
+    self.detailsRow.alignment                                 = UIStackViewAlignmentLeading;
+    self.detailsRow.distribution                              = UIStackViewDistributionFill;
+    self.detailsRow.translatesAutoresizingMaskIntoConstraints = NO;
+    UIStackView *metaStack =
+        [[UIStackView alloc] initWithArrangedSubviews:@[ self.titleLabel, self.detailsRow ]];
+    metaStack.axis                                      = UILayoutConstraintAxisVertical;
+    metaStack.spacing                                   = spacing;
     metaStack.translatesAutoresizingMaskIntoConstraints = NO;
     metaStack.alignment                                 = UIStackViewAlignmentLeading;
     metaStack.distribution                              = UIStackViewDistributionFill;
 
     UIStackView *asinStack =
         [[UIStackView alloc] initWithArrangedSubviews:@[ asinTitleLabel, self.asinBlock ]];
-    asinStack.axis                                      = UILayoutConstraintAxisVertical;
-    asinStack.spacing                                   = 2;
-    asinStack.alignment                                 = UIStackViewAlignmentLeading;
+    asinStack.axis                                      = UILayoutConstraintAxisHorizontal;
+    asinStack.spacing                                   = 8;
+    asinStack.alignment                                 = UIStackViewAlignmentCenter;
     asinStack.translatesAutoresizingMaskIntoConstraints = NO;
+    [asinTitleLabel setContentHuggingPriority:UILayoutPriorityRequired
+                                      forAxis:UILayoutConstraintAxisHorizontal];
+    [self.asinBlock setContentCompressionResistancePriority:UILayoutPriorityRequired
+                                                    forAxis:UILayoutConstraintAxisHorizontal];
+    [self.asinBlock setContentHuggingPriority:UILayoutPriorityRequired
+                                      forAxis:UILayoutConstraintAxisHorizontal];
 
     UIStackView *contentIdStack                              = [[UIStackView alloc]
         initWithArrangedSubviews:@[ contentIdTitleLabel, self.contentIdBlock ]];
-    contentIdStack.axis                                      = UILayoutConstraintAxisVertical;
-    contentIdStack.spacing                                   = 2;
-    contentIdStack.alignment                                 = UIStackViewAlignmentLeading;
+    contentIdStack.axis                                      = UILayoutConstraintAxisHorizontal;
+    contentIdStack.spacing                                   = 8;
+    contentIdStack.alignment                                 = UIStackViewAlignmentCenter;
     contentIdStack.translatesAutoresizingMaskIntoConstraints = NO;
+    [contentIdTitleLabel setContentHuggingPriority:UILayoutPriorityRequired
+                                           forAxis:UILayoutConstraintAxisHorizontal];
+    [self.contentIdBlock setContentCompressionResistancePriority:UILayoutPriorityRequired
+                                                         forAxis:UILayoutConstraintAxisHorizontal];
+    [self.contentIdBlock setContentHuggingPriority:UILayoutPriorityRequired
+                                           forAxis:UILayoutConstraintAxisHorizontal];
 
-    UIStackView *stack =
-        [[UIStackView alloc] initWithArrangedSubviews:@[ metaStack, asinStack, contentIdStack ]];
-    stack.axis                                      = UILayoutConstraintAxisVertical;
-    stack.spacing                                   = spacing;
+    UIStackView *idsRow =
+        [[UIStackView alloc] initWithArrangedSubviews:@[ asinStack, contentIdStack ]];
+    idsRow.axis                                      = UILayoutConstraintAxisHorizontal;
+    idsRow.spacing                                   = spacing;
+    idsRow.alignment                                 = UIStackViewAlignmentLeading;
+    idsRow.distribution                              = UIStackViewDistributionFillProportionally;
+    idsRow.translatesAutoresizingMaskIntoConstraints = NO;
+
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[ metaStack, idsRow ]];
+    stack.axis         = UILayoutConstraintAxisVertical;
+    stack.spacing      = spacing + 4;
     stack.translatesAutoresizingMaskIntoConstraints = NO;
     stack.alignment                                 = UIStackViewAlignmentFill;
     stack.distribution                              = UIStackViewDistributionFill;
@@ -197,16 +239,16 @@ extern double          totalBookDuration;
                       copySize:(CGFloat)copySize
 {
     UIView *block                                   = [[UIView alloc] init];
-    block.backgroundColor                           = UIColor.secondarySystemBackgroundColor;
-    block.layer.cornerRadius                        = 8;
+    block.backgroundColor                           = UIColor.tertiarySystemBackgroundColor;
+    block.layer.cornerRadius                        = 12;
     block.layer.masksToBounds                       = YES;
     block.translatesAutoresizingMaskIntoConstraints = NO;
-    [[block.heightAnchor constraintEqualToConstant:44] setActive:YES];
-
+    [[block.heightAnchor constraintEqualToConstant:36] setActive:YES];
     UILabel *codeLabel      = [[UILabel alloc] init];
     codeLabel.font          = [UIFont monospacedSystemFontOfSize:font weight:UIFontWeightMedium];
     codeLabel.textColor     = UIColor.labelColor;
     codeLabel.numberOfLines = 1;
+    codeLabel.lineBreakMode = NSLineBreakByTruncatingMiddle;
     codeLabel.translatesAutoresizingMaskIntoConstraints = NO;
     [block addSubview:codeLabel];
     *label = codeLabel;
@@ -218,15 +260,79 @@ extern double          totalBookDuration;
     *button = copyBtn;
 
     [NSLayoutConstraint activateConstraints:@[
-        [codeLabel.leadingAnchor constraintEqualToAnchor:block.leadingAnchor constant:12],
+        [codeLabel.leadingAnchor constraintEqualToAnchor:block.leadingAnchor constant:10],
         [codeLabel.centerYAnchor constraintEqualToAnchor:block.centerYAnchor],
-        [copyBtn.leadingAnchor constraintEqualToAnchor:codeLabel.trailingAnchor constant:8],
-        [copyBtn.trailingAnchor constraintEqualToAnchor:block.trailingAnchor constant:-8],
+        [copyBtn.leadingAnchor constraintEqualToAnchor:codeLabel.trailingAnchor constant:4],
         [copyBtn.centerYAnchor constraintEqualToAnchor:block.centerYAnchor],
         [copyBtn.widthAnchor constraintEqualToConstant:copySize],
-        [copyBtn.heightAnchor constraintEqualToConstant:copySize]
+        [copyBtn.heightAnchor constraintEqualToConstant:copySize],
+        [copyBtn.trailingAnchor constraintEqualToAnchor:block.trailingAnchor constant:-6]
     ]];
+    [block setContentHuggingPriority:UILayoutPriorityRequired
+                             forAxis:UILayoutConstraintAxisHorizontal];
+    [block setContentCompressionResistancePriority:UILayoutPriorityRequired
+                                           forAxis:UILayoutConstraintAxisHorizontal];
     return block;
+}
+
+- (UIView *)chipWithIcon:(NSString *)systemName label:(UILabel *)label
+{
+    UIStackView *chip                              = [[UIStackView alloc] init];
+    chip.axis                                      = UILayoutConstraintAxisHorizontal;
+    chip.spacing                                   = 6;
+    chip.alignment                                 = UIStackViewAlignmentCenter;
+    chip.distribution                              = UIStackViewDistributionFill;
+    chip.translatesAutoresizingMaskIntoConstraints = NO;
+
+    UIView *bg                                   = [[UIView alloc] init];
+    bg.backgroundColor                           = UIColor.tertiarySystemBackgroundColor;
+    bg.layer.cornerRadius                        = 12;
+    bg.layer.masksToBounds                       = YES;
+    bg.translatesAutoresizingMaskIntoConstraints = NO;
+
+    UIImageView *icon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:systemName]];
+    icon.tintColor    = UIColor.secondaryLabelColor;
+    icon.translatesAutoresizingMaskIntoConstraints          = NO;
+    [icon.widthAnchor constraintEqualToConstant:14].active  = YES;
+    [icon.heightAnchor constraintEqualToConstant:14].active = YES;
+
+    UIView *container                                   = [[UIView alloc] init];
+    container.translatesAutoresizingMaskIntoConstraints = NO;
+    [container addSubview:icon];
+    [container addSubview:label];
+    label.translatesAutoresizingMaskIntoConstraints = NO;
+    [label setContentHuggingPriority:UILayoutPriorityDefaultHigh
+                             forAxis:UILayoutConstraintAxisHorizontal];
+    [label setContentCompressionResistancePriority:UILayoutPriorityRequired
+                                           forAxis:UILayoutConstraintAxisHorizontal];
+    [icon setContentHuggingPriority:UILayoutPriorityDefaultLow
+                            forAxis:UILayoutConstraintAxisHorizontal];
+    [icon setContentCompressionResistancePriority:UILayoutPriorityDefaultHigh
+                                          forAxis:UILayoutConstraintAxisHorizontal];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [icon.leadingAnchor constraintEqualToAnchor:container.leadingAnchor constant:8],
+        [icon.centerYAnchor constraintEqualToAnchor:container.centerYAnchor],
+        [label.leadingAnchor constraintEqualToAnchor:icon.trailingAnchor constant:6],
+        [label.topAnchor constraintEqualToAnchor:container.topAnchor constant:4],
+        [label.bottomAnchor constraintEqualToAnchor:container.bottomAnchor constant:-4],
+        [label.trailingAnchor constraintEqualToAnchor:container.trailingAnchor constant:-8]
+    ]];
+
+    [bg addSubview:container];
+    [NSLayoutConstraint activateConstraints:@[
+        [container.leadingAnchor constraintEqualToAnchor:bg.leadingAnchor],
+        [container.trailingAnchor constraintEqualToAnchor:bg.trailingAnchor],
+        [container.topAnchor constraintEqualToAnchor:bg.topAnchor],
+        [container.bottomAnchor constraintEqualToAnchor:bg.bottomAnchor]
+    ]];
+
+    [bg setContentHuggingPriority:UILayoutPriorityRequired
+                          forAxis:UILayoutConstraintAxisHorizontal];
+    [bg setContentCompressionResistancePriority:UILayoutPriorityRequired
+                                        forAxis:UILayoutConstraintAxisHorizontal];
+
+    return bg;
 }
 
 - (UIView *)setupHardcoverSection
@@ -234,7 +340,6 @@ extern double          totalBookDuration;
     UIView *section                                   = [[UIView alloc] init];
     section.translatesAutoresizingMaskIntoConstraints = NO;
 
-    // Header: "Hardcover"
     self.hardcoverHeaderLabel           = [[UILabel alloc] init];
     self.hardcoverHeaderLabel.text      = @"Hardcover";
     self.hardcoverHeaderLabel.font      = [UIFont systemFontOfSize:18 weight:UIFontWeightSemibold];
@@ -312,7 +417,7 @@ extern double          totalBookDuration;
                            constant:8],
         [self.userProfileView.leadingAnchor constraintEqualToAnchor:section.leadingAnchor],
         [self.userProfileView.trailingAnchor constraintEqualToAnchor:section.trailingAnchor],
-        [self.userProfileView.heightAnchor constraintGreaterThanOrEqualToConstant:60],
+        [self.userProfileView.heightAnchor constraintEqualToConstant:48],
 
         [section.bottomAnchor constraintEqualToAnchor:self.authorizeButton.bottomAnchor]
     ]];
@@ -324,19 +429,17 @@ extern double          totalBookDuration;
 {
     UIView *profileView                                   = [[UIView alloc] init];
     profileView.backgroundColor                           = UIColor.tertiarySystemBackgroundColor;
-    profileView.layer.cornerRadius                        = 8;
+    profileView.layer.cornerRadius                        = 12;
     profileView.layer.masksToBounds                       = YES;
     profileView.translatesAutoresizingMaskIntoConstraints = NO;
 
-    // Avatar image view
     self.userAvatarView                     = [[UIImageView alloc] init];
     self.userAvatarView.backgroundColor     = UIColor.systemGrayColor;
-    self.userAvatarView.layer.cornerRadius  = 20;
+    self.userAvatarView.layer.cornerRadius  = 16;
     self.userAvatarView.layer.masksToBounds = YES;
     self.userAvatarView.contentMode         = UIViewContentModeScaleAspectFill;
     self.userAvatarView.translatesAutoresizingMaskIntoConstraints = NO;
 
-    // Name + username stacked vertically
     self.userNameLabel               = [[UILabel alloc] init];
     self.userNameLabel.font          = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
     self.userNameLabel.textColor     = UIColor.labelColor;
@@ -347,7 +450,7 @@ extern double          totalBookDuration;
     usernameLabel.font          = [UIFont systemFontOfSize:13 weight:UIFontWeightRegular];
     usernameLabel.textColor     = UIColor.secondaryLabelColor;
     usernameLabel.numberOfLines = 1;
-    usernameLabel.tag           = 500; // find later
+    usernameLabel.tag           = 500;
     usernameLabel.translatesAutoresizingMaskIntoConstraints = NO;
 
     UIStackView *nameStack =
@@ -357,7 +460,6 @@ extern double          totalBookDuration;
     nameStack.alignment                                 = UIStackViewAlignmentLeading;
     nameStack.translatesAutoresizingMaskIntoConstraints = NO;
 
-    // Social stats: books and followers
     self.booksCountLabel               = [[UILabel alloc] init];
     self.booksCountLabel.font          = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
     self.booksCountLabel.textColor     = UIColor.labelColor;
@@ -402,8 +504,8 @@ extern double          totalBookDuration;
         [self.userAvatarView.leadingAnchor constraintEqualToAnchor:profileView.leadingAnchor
                                                           constant:12],
         [self.userAvatarView.centerYAnchor constraintEqualToAnchor:profileView.centerYAnchor],
-        [self.userAvatarView.widthAnchor constraintEqualToConstant:40],
-        [self.userAvatarView.heightAnchor constraintEqualToConstant:40],
+        [self.userAvatarView.widthAnchor constraintEqualToConstant:32],
+        [self.userAvatarView.heightAnchor constraintEqualToConstant:32],
 
         [nameStack.leadingAnchor constraintEqualToAnchor:self.userAvatarView.trailingAnchor
                                                 constant:12],
@@ -416,7 +518,6 @@ extern double          totalBookDuration;
                                                            constant:-12]
     ]];
 
-    // Add tap gesture to allow token editing
     UITapGestureRecognizer *tapGesture =
         [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(editHardcoverToken)];
     profileView.userInteractionEnabled = YES;
@@ -429,15 +530,12 @@ extern double          totalBookDuration;
 {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         [NSThread sleepForTimeInterval:0.7];
-        NSDictionary *info = [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo;
-        // Fix: Audible uses album for book title, title for chapter
-        NSString *bookTitle    = info[MPMediaItemPropertyAlbumTitle] ?: @"";
-        NSString *chapterTitle = info[MPMediaItemPropertyTitle] ?: @"";
-        NSString *author       = info[MPMediaItemPropertyArtist] ?: @"";
-        NSNumber *elapsed      = info[MPNowPlayingInfoPropertyElapsedPlaybackTime];
-        // removed unused variable 'duration'
-        // removed unused elapsedStr and durationStr
-        // Calculate full book progress
+        NSDictionary *info         = [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo;
+        NSString     *bookTitle    = info[MPMediaItemPropertyAlbumTitle] ?: @"";
+        NSString     *chapterTitle = info[MPMediaItemPropertyTitle] ?: @"";
+        NSString     *author       = info[MPMediaItemPropertyArtist] ?: @"";
+        NSNumber     *elapsed      = info[MPNowPlayingInfoPropertyElapsedPlaybackTime];
+
         extern double          totalBookDuration;
         extern NSMutableArray *allChapters;
         double                 fullElapsed = 0.0;
@@ -469,28 +567,27 @@ extern double          totalBookDuration;
         NSString *fullElapsedStr = [self formatTime:fullElapsed];
         NSString *fullDurationStr =
             totalBookDuration > 0.0 ? [self formatTime:totalBookDuration] : @"--";
-        double percent =
-            (totalBookDuration > 0.0) ? (fullElapsed / totalBookDuration) * 100.0 : 0.0;
         NSString *progressStr =
             (totalBookDuration > 0.0)
-                ? [NSString stringWithFormat:@"Progress: %@ / %@ (%.1f%%)", fullElapsedStr,
-                                             fullDurationStr, percent]
-                : @"Progress: --";
-        // Fix: Get ASIN/Content ID from global Chronos state if available
+                ? [NSString stringWithFormat:@"%@ / %@", fullElapsedStr, fullDurationStr]
+                : @"--";
+
         extern NSString *currentASIN;
         extern NSString *currentContentID;
         NSString        *asin      = currentASIN ?: info[@"asin"] ?: @"";
         NSString        *contentId = currentContentID ?: info[@"contentId"] ?: @"";
         dispatch_async(dispatch_get_main_queue(), ^{
             [self.spinner stopAnimating];
-            UIView *stack            = [self.view viewWithTag:101];
-            stack.hidden             = NO;
-            self.titleLabel.text     = bookTitle.length ? bookTitle : @"(No Book Title)";
-            self.authorLabel.text    = author.length ? author : @"(No Author)";
-            self.chapterLabel.text   = chapterTitle.length
-                                           ? [NSString stringWithFormat:@"Chapter: %@", chapterTitle]
-                                           : @"(No Chapter)";
-            self.progressLabel.text  = progressStr;
+            UIView *stack           = [self.view viewWithTag:101];
+            stack.hidden            = NO;
+            self.titleLabel.text    = bookTitle.length ? bookTitle : @"(No Book Title)";
+            self.authorLabel.text   = author;
+            self.chapterLabel.text  = chapterTitle;
+            self.progressLabel.text = progressStr;
+
+            self.authorChip.hidden   = (self.authorLabel.text.length == 0);
+            self.chapterChip.hidden  = (self.chapterLabel.text.length == 0);
+            self.progressChip.hidden = (totalBookDuration <= 0.0);
             self.asinLabel.text      = asin.length ? asin : @"(no ASIN)";
             self.contentIdLabel.text = contentId.length ? contentId : @"(no Content ID)";
             [self.asinCopyButton addTarget:self
@@ -527,13 +624,12 @@ extern double          totalBookDuration;
 - (void)viewWillDisappear:(BOOL)animated
 {
     [super viewWillDisappear:animated];
-    // Window cleanup is handled in the dismissal completion block
 }
 
 - (void)viewDidDisappear:(BOOL)animated
 {
     [super viewDidDisappear:animated];
-    // Ensure window cleanup happens even if dismissed by system (tap outside, etc.)
+
     UIWindow               *storedWindow = nil;
     UINavigationController *nav          = (UINavigationController *) self.navigationController;
     if (nav)
@@ -631,20 +727,42 @@ extern double          totalBookDuration;
 
 - (void)updateHardcoverUI:(HardcoverUser *)user
 {
-    self.userNameLabel.text = user.name ?: @"Unknown";
-    UILabel *usernameLabel  = [self.userProfileView viewWithTag:500];
+    // Prefer name, fall back to @username, otherwise Unknown
+    if (user.name.length > 0)
+        self.userNameLabel.text = user.name;
+    else if (user.username.length > 0)
+        self.userNameLabel.text = [NSString stringWithFormat:@"@%@", user.username];
+    else
+        self.userNameLabel.text = @"Unknown";
+    UILabel *usernameLabel = [self.userProfileView viewWithTag:500];
     if ([usernameLabel isKindOfClass:[UILabel class]])
     {
         ((UILabel *) usernameLabel).text =
             [NSString stringWithFormat:@"@%@", user.username ?: @"unknown"];
     }
 
-    // Stats
-    self.booksCountLabel.text = user.books_count ? [user.books_count stringValue] : @"0";
-    self.followersCountLabel.text =
-        user.followers_count ? [user.followers_count stringValue] : @"0";
+    NSInteger books               = user.books_count ? user.books_count.integerValue : 0;
+    NSInteger followers           = user.followers_count ? user.followers_count.integerValue : 0;
+    self.booksCountLabel.text     = [NSString stringWithFormat:@"%ld", (long) books];
+    self.followersCountLabel.text = [NSString stringWithFormat:@"%ld", (long) followers];
+    // Hide followers stack if zero to avoid empty look
+    UIStackView *followersStack = nil;
+    for (UIView *v in self.userStatsStack.arrangedSubviews)
+    {
+        UIStackView *s = (UIStackView *) v;
+        if ([s isKindOfClass:[UIStackView class]] && s.arrangedSubviews.count == 2)
+        {
+            UILabel *cap = (UILabel *) s.arrangedSubviews[1];
+            if ([cap isKindOfClass:[UILabel class]] && [cap.text isEqualToString:@"Followers"])
+            {
+                followersStack = s;
+                break;
+            }
+        }
+    }
+    followersStack.hidden      = (followers == 0);
+    self.userStatsStack.hidden = (books == 0 && followers == 0);
 
-    // Load user avatar
     if (user.imageURL && user.imageURL.length > 0)
     {
         [self loadImageFromURL:user.imageURL intoImageView:self.userAvatarView];
@@ -655,7 +773,6 @@ extern double          totalBookDuration;
         self.userAvatarView.tintColor = UIColor.systemGrayColor;
     }
 
-    // Update UI layout
     [UIView
         animateWithDuration:0.3
                  animations:^{
@@ -663,7 +780,6 @@ extern double          totalBookDuration;
                      self.authorizeButton.hidden = YES;
                      self.userProfileView.hidden = NO;
 
-                     // Update bottom constraint
                      NSLayoutConstraint *bottomConstraint = nil;
                      for (NSLayoutConstraint *constraint in self.hardcoverSection.constraints)
                      {
@@ -677,7 +793,6 @@ extern double          totalBookDuration;
                      {
                          [self.hardcoverSection removeConstraint:bottomConstraint];
                      }
-                     // Anchor section bottom to profile bottom to remove extra space
                      [[self.hardcoverSection.bottomAnchor
                          constraintEqualToAnchor:self.userProfileView.bottomAnchor] setActive:YES];
                  }];
@@ -698,7 +813,6 @@ extern double          totalBookDuration;
                      self.authorizeButton.hidden = NO;
                      self.userProfileView.hidden = YES;
 
-                     // Update bottom constraint
                      NSLayoutConstraint *bottomConstraint = nil;
                      for (NSLayoutConstraint *constraint in self.hardcoverSection.constraints)
                      {
