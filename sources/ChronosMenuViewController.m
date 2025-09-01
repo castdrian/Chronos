@@ -1,5 +1,4 @@
 #import "ChronosMenuViewController.h"
-#import "HardcoverAPI.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -10,7 +9,7 @@ extern double          totalBookDuration;
 }
 #endif
 
-@interface                                             ChronosMenuViewController ()
+@interface ChronosMenuViewController () <SFSafariViewControllerDelegate>
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) UILabel                 *titleLabel;
 @property (nonatomic, strong) UILabel                 *authorLabel;
@@ -33,6 +32,7 @@ extern double          totalBookDuration;
 @property (nonatomic, strong) UILabel                 *booksCountLabel;
 @property (nonatomic, strong) UILabel                 *followersCountLabel;
 @property (nonatomic, strong) UIActivityIndicatorView *hardcoverSpinner;
+@property (nonatomic, strong) UIActivityIndicatorView *profileRefreshSpinner;
 @property (nonatomic, strong) UIView                  *authorChip;
 @property (nonatomic, strong) UIView                  *chapterChip;
 @property (nonatomic, strong) UIView                  *progressChip;
@@ -222,6 +222,58 @@ extern double          totalBookDuration;
         [self.hardcoverSection.bottomAnchor constraintEqualToAnchor:hardcoverCard.bottomAnchor
                                                            constant:-margin]
     ]];
+
+    UIView *aboutCard                                   = [[UIView alloc] init];
+    aboutCard.backgroundColor                           = UIColor.secondarySystemBackgroundColor;
+    aboutCard.layer.cornerRadius                        = 14;
+    aboutCard.layer.masksToBounds                       = YES;
+    aboutCard.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:aboutCard];
+
+    UILabel *versionTextLabel = [self labelWithFont:13 weight:UIFontWeightRegular];
+#ifdef PACKAGE_VERSION
+    versionTextLabel.text = [NSString stringWithFormat:@"v.%@", PACKAGE_VERSION];
+#else
+    versionTextLabel.text = @"v.unknown";
+#endif
+    UIView *versionChip = [self chipWithIcon:@"tag.fill" label:versionTextLabel];
+
+    UILabel *githubTextLabel = [self labelWithFont:13 weight:UIFontWeightRegular];
+    githubTextLabel.text     = @"GitHub";
+    UIControl *githubChip    = [self tappableChipWithIcon:@"chevron.left.slash.chevron.right"
+                                                 label:githubTextLabel
+                                                action:@selector(openGitHub)];
+
+    UILabel *donateTextLabel = [self labelWithFont:13 weight:UIFontWeightRegular];
+    donateTextLabel.text     = @"Donate";
+    UIControl *donateChip    = [self tappableChipWithIcon:@"heart.fill"
+                                                 label:donateTextLabel
+                                                action:@selector(openDonate)];
+
+    UIStackView *aboutRow =
+        [[UIStackView alloc] initWithArrangedSubviews:@[ versionChip, githubChip, donateChip ]];
+    aboutRow.axis                                      = UILayoutConstraintAxisHorizontal;
+    aboutRow.spacing                                   = spacing;
+    aboutRow.alignment                                 = UIStackViewAlignmentLeading;
+    aboutRow.distribution                              = UIStackViewDistributionFill;
+    aboutRow.translatesAutoresizingMaskIntoConstraints = NO;
+    [aboutCard addSubview:aboutRow];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [aboutCard.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:margin],
+        [aboutCard.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor
+                                                 constant:-margin],
+        [aboutCard.topAnchor constraintEqualToAnchor:hardcoverCard.bottomAnchor constant:spacing],
+        [aboutCard.bottomAnchor
+            constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor
+                                     constant:-margin],
+
+        [aboutRow.leadingAnchor constraintEqualToAnchor:aboutCard.leadingAnchor constant:margin],
+        [aboutRow.trailingAnchor constraintLessThanOrEqualToAnchor:aboutCard.trailingAnchor
+                                                          constant:-margin],
+        [aboutRow.topAnchor constraintEqualToAnchor:aboutCard.topAnchor constant:margin],
+        [aboutRow.bottomAnchor constraintEqualToAnchor:aboutCard.bottomAnchor constant:-margin]
+    ]];
 }
 
 - (UILabel *)labelWithFont:(CGFloat)size weight:(UIFontWeight)weight
@@ -333,6 +385,66 @@ extern double          totalBookDuration;
                                         forAxis:UILayoutConstraintAxisHorizontal];
 
     return bg;
+}
+
+- (UIControl *)tappableChipWithIcon:(NSString *)systemName label:(UILabel *)label action:(SEL)action
+{
+    UIView *bg                = [self chipWithIcon:systemName label:label];
+    bg.userInteractionEnabled = NO;
+
+    UIControl *control                                = [[UIControl alloc] init];
+    control.translatesAutoresizingMaskIntoConstraints = NO;
+    control.layer.cornerRadius                        = ((UIView *) bg).layer.cornerRadius;
+    control.layer.masksToBounds                       = YES;
+    control.accessibilityTraits |= UIAccessibilityTraitButton;
+
+    [control addSubview:bg];
+    [NSLayoutConstraint activateConstraints:@[
+        [bg.leadingAnchor constraintEqualToAnchor:control.leadingAnchor],
+        [bg.trailingAnchor constraintEqualToAnchor:control.trailingAnchor],
+        [bg.topAnchor constraintEqualToAnchor:control.topAnchor],
+        [bg.bottomAnchor constraintEqualToAnchor:control.bottomAnchor]
+    ]];
+
+    [control addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
+
+    [control addTarget:self
+                  action:@selector(_chipTouchDown:)
+        forControlEvents:UIControlEventTouchDown | UIControlEventTouchDragEnter];
+    [control addTarget:self
+                  action:@selector(_chipTouchUp:)
+        forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchCancel |
+                         UIControlEventTouchDragExit];
+
+    return control;
+}
+
+- (void)_chipTouchDown:(UIControl *)sender
+{
+    [UIView animateWithDuration:0.08
+                          delay:0
+                        options:UIViewAnimationOptionCurveEaseOut |
+                                UIViewAnimationOptionAllowUserInteraction
+                     animations:^{
+                         sender.alpha     = 0.7;
+                         sender.transform = CGAffineTransformMakeScale(0.98, 0.98);
+                     }
+                     completion:nil];
+}
+
+- (void)_chipTouchUp:(UIControl *)sender
+{
+    [UIView animateWithDuration:0.12
+                          delay:0
+         usingSpringWithDamping:0.9
+          initialSpringVelocity:0.6
+                        options:UIViewAnimationOptionCurveEaseInOut |
+                                UIViewAnimationOptionAllowUserInteraction
+                     animations:^{
+                         sender.alpha     = 1.0;
+                         sender.transform = CGAffineTransformIdentity;
+                     }
+                     completion:nil];
 }
 
 - (UIView *)setupHardcoverSection
@@ -500,6 +612,13 @@ extern double          totalBookDuration;
     [profileView addSubview:nameStack];
     [profileView addSubview:self.userStatsStack];
 
+    self.profileRefreshSpinner = [[UIActivityIndicatorView alloc]
+        initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+    self.profileRefreshSpinner.translatesAutoresizingMaskIntoConstraints = NO;
+    self.profileRefreshSpinner.hidesWhenStopped                          = YES;
+    self.profileRefreshSpinner.hidden                                    = YES;
+    [profileView addSubview:self.profileRefreshSpinner];
+
     [NSLayoutConstraint activateConstraints:@[
         [self.userAvatarView.leadingAnchor constraintEqualToAnchor:profileView.leadingAnchor
                                                           constant:12],
@@ -514,8 +633,14 @@ extern double          totalBookDuration;
             constraintGreaterThanOrEqualToAnchor:nameStack.trailingAnchor
                                         constant:12],
         [self.userStatsStack.centerYAnchor constraintEqualToAnchor:profileView.centerYAnchor],
-        [self.userStatsStack.trailingAnchor constraintEqualToAnchor:profileView.trailingAnchor
-                                                           constant:-12]
+        [self.userStatsStack.trailingAnchor
+            constraintLessThanOrEqualToAnchor:self.profileRefreshSpinner.leadingAnchor
+                                     constant:-8],
+        [self.profileRefreshSpinner.centerYAnchor
+            constraintEqualToAnchor:profileView.centerYAnchor],
+        [self.profileRefreshSpinner.trailingAnchor
+            constraintEqualToAnchor:profileView.trailingAnchor
+                           constant:-12]
     ]];
 
     UITapGestureRecognizer *tapGesture =
@@ -667,6 +792,25 @@ extern double          totalBookDuration;
     if (api.apiToken && api.apiToken.length > 0)
     {
         self.apiTokenField.text = api.apiToken;
+
+        HardcoverUser *cached = [self loadCachedHardcoverUser];
+        if (cached)
+        {
+            [self updateHardcoverUI:cached];
+        }
+        else
+        {
+            self.apiTokenField.hidden   = YES;
+            self.authorizeButton.hidden = YES;
+            self.userProfileView.hidden = NO;
+            self.userNameLabel.text     = @"Loading…";
+            self.userAvatarView.image   = [UIImage systemImageNamed:@"person.circle.fill"];
+        }
+        if (self.profileRefreshSpinner)
+        {
+            self.profileRefreshSpinner.hidden = NO;
+            [self.profileRefreshSpinner startAnimating];
+        }
         [self refreshHardcoverAuth];
     }
 }
@@ -685,6 +829,11 @@ extern double          totalBookDuration;
         else
         {
             [self showHardcoverLoginUI];
+        }
+        if (self.profileRefreshSpinner)
+        {
+            [self.profileRefreshSpinner stopAnimating];
+            self.profileRefreshSpinner.hidden = YES;
         }
     }];
 }
@@ -727,7 +876,6 @@ extern double          totalBookDuration;
 
 - (void)updateHardcoverUI:(HardcoverUser *)user
 {
-    // Prefer name, fall back to @username, otherwise Unknown
     if (user.name.length > 0)
         self.userNameLabel.text = user.name;
     else if (user.username.length > 0)
@@ -745,7 +893,7 @@ extern double          totalBookDuration;
     NSInteger followers           = user.followers_count ? user.followers_count.integerValue : 0;
     self.booksCountLabel.text     = [NSString stringWithFormat:@"%ld", (long) books];
     self.followersCountLabel.text = [NSString stringWithFormat:@"%ld", (long) followers];
-    // Hide followers stack if zero to avoid empty look
+
     UIStackView *followersStack = nil;
     for (UIView *v in self.userStatsStack.arrangedSubviews)
     {
@@ -772,6 +920,8 @@ extern double          totalBookDuration;
         self.userAvatarView.image     = [UIImage systemImageNamed:@"person.circle.fill"];
         self.userAvatarView.tintColor = UIColor.systemGrayColor;
     }
+
+    [self saveCachedHardcoverUser:user];
 
     [UIView
         animateWithDuration:0.3
@@ -812,6 +962,11 @@ extern double          totalBookDuration;
                      self.apiTokenField.hidden   = NO;
                      self.authorizeButton.hidden = NO;
                      self.userProfileView.hidden = YES;
+                     if (self.profileRefreshSpinner)
+                     {
+                         [self.profileRefreshSpinner stopAnimating];
+                         self.profileRefreshSpinner.hidden = YES;
+                     }
 
                      NSLayoutConstraint *bottomConstraint = nil;
                      for (NSLayoutConstraint *constraint in self.hardcoverSection.constraints)
@@ -890,5 +1045,79 @@ extern double          totalBookDuration;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t) (0.7 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(),
                    ^{ [alert dismissViewControllerAnimated:YES completion:nil]; });
+}
+
+- (void)openGitHub
+{
+    NSURL *url = [NSURL URLWithString:@"https://github.com/castdrian/Chronos"];
+    if (!url)
+        return;
+    SFSafariViewController *safari = [[SFSafariViewController alloc] initWithURL:url];
+    if (@available(iOS 11.0, *))
+    {
+        safari.dismissButtonStyle = SFSafariViewControllerDismissButtonStyleClose;
+    }
+    safari.delegate               = self;
+    safari.modalPresentationStyle = UIModalPresentationPageSheet;
+    [self.navigationController presentViewController:safari animated:YES completion:nil];
+}
+
+- (void)openDonate
+{
+    NSURL *url = [NSURL URLWithString:@"https://ko-fi.com/castdrian"];
+    if (!url)
+        return;
+    SFSafariViewController *safari = [[SFSafariViewController alloc] initWithURL:url];
+    if (@available(iOS 11.0, *))
+    {
+        safari.dismissButtonStyle = SFSafariViewControllerDismissButtonStyleClose;
+    }
+    safari.delegate               = self;
+    safari.modalPresentationStyle = UIModalPresentationPageSheet;
+    [self.navigationController presentViewController:safari animated:YES completion:nil];
+}
+
+#pragma mark - SFSafariViewControllerDelegate
+
+- (void)safariViewControllerDidFinish:(SFSafariViewController *)controller
+{
+    // Ensure only the Safari VC is dismissed, not our menu sheet
+    [controller dismissViewControllerAnimated:YES completion:nil];
+}
+
+#pragma mark - Hardcover cache helpers
+
+- (void)saveCachedHardcoverUser:(HardcoverUser *)user
+{
+    if (!user)
+        return;
+    NSMutableDictionary *dict = [NSMutableDictionary dictionary];
+    if (user.username)
+        dict[@"username"] = user.username;
+    if (user.name)
+        dict[@"name"] = user.name;
+    if (user.imageURL)
+        dict[@"imageURL"] = user.imageURL;
+    if (user.books_count)
+        dict[@"books_count"] = user.books_count;
+    if (user.followers_count)
+        dict[@"followers_count"] = user.followers_count;
+    [[NSUserDefaults standardUserDefaults] setObject:dict forKey:@"HardcoverCachedUser"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+- (HardcoverUser *)loadCachedHardcoverUser
+{
+    NSDictionary *dict =
+        [[NSUserDefaults standardUserDefaults] objectForKey:@"HardcoverCachedUser"];
+    if (![dict isKindOfClass:[NSDictionary class]])
+        return nil;
+    HardcoverUser *user  = [HardcoverUser new];
+    user.username        = dict[@"username"];
+    user.name            = dict[@"name"];
+    user.imageURL        = dict[@"imageURL"];
+    user.books_count     = dict[@"books_count"];
+    user.followers_count = dict[@"followers_count"];
+    return user;
 }
 @end
