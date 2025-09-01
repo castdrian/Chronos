@@ -30,6 +30,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setAPIToken:(nullable NSString *)token;
 - (void)authorizeWithCompletion:(void (^ _Nullable)(BOOL success, HardcoverUser * _Nullable user, NSError * _Nullable error))completion;
 - (void)refreshUserWithCompletion:(void (^ _Nullable)(BOOL success, HardcoverUser * _Nullable user, NSError * _Nullable error))completion;
+- (void)fetchCurrentlyReadingForUserId:(nullable NSNumber *)userId
+							 completion:(void (^ _Nullable)(NSArray * _Nullable items, NSError * _Nullable error))completion;
 - (void)saveToken:(nullable NSString *)token;
 - (nullable NSString *)loadSavedToken;
 - (void)clearToken;

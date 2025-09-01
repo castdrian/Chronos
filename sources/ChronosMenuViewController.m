@@ -9,6 +9,29 @@ extern double          totalBookDuration;
 }
 #endif
 
+static void Chronos_StartMarquee(UIScrollView *marquee, CGFloat labelWidth, CGFloat marqueeWidth)
+{
+    if (!marquee)
+        return;
+    marquee.contentOffset   = CGPointZero;
+    CGFloat        distance = MAX(0, labelWidth - marqueeWidth);
+    NSTimeInterval duration = MAX(3.0, MIN(10.0, distance / 20.0));
+    [UIView animateWithDuration:duration
+        delay:0
+        options:UIViewAnimationOptionCurveLinear
+        animations:^{ marquee.contentOffset = CGPointMake(distance, 0); }
+        completion:^(BOOL finished) {
+            if (!finished)
+                return;
+            marquee.contentOffset = CGPointZero;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t) (0.5 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                               if (marquee.window)
+                                   Chronos_StartMarquee(marquee, labelWidth, marqueeWidth);
+                           });
+        }];
+}
+
 @interface ChronosMenuViewController () <SFSafariViewControllerDelegate>
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) UILabel                 *titleLabel;
@@ -33,6 +56,10 @@ extern double          totalBookDuration;
 @property (nonatomic, strong) UILabel                 *followersCountLabel;
 @property (nonatomic, strong) UIActivityIndicatorView *hardcoverSpinner;
 @property (nonatomic, strong) UIActivityIndicatorView *profileRefreshSpinner;
+@property (nonatomic, strong) UIView                  *currentlyReadingContainer;
+@property (nonatomic, strong) UIScrollView            *currentlyReadingScroll;
+@property (nonatomic, strong) UIStackView             *currentlyReadingStack;
+@property (nonatomic, strong) NSArray                 *currentlyReadingItems;
 @property (nonatomic, strong) UIView                  *authorChip;
 @property (nonatomic, strong) UIView                  *chapterChip;
 @property (nonatomic, strong) UIView                  *progressChip;
@@ -231,11 +258,8 @@ extern double          totalBookDuration;
     [self.view addSubview:aboutCard];
 
     UILabel *versionTextLabel = [self labelWithFont:13 weight:UIFontWeightRegular];
-#ifdef PACKAGE_VERSION
-    versionTextLabel.text = [NSString stringWithFormat:@"v.%@", PACKAGE_VERSION];
-#else
-    versionTextLabel.text = @"v.unknown";
-#endif
+    versionTextLabel.text     = [NSString stringWithFormat:@"v%@", PACKAGE_VERSION];
+
     UIView *versionChip = [self chipWithIcon:@"tag.fill" label:versionTextLabel];
 
     UILabel *githubTextLabel = [self labelWithFont:13 weight:UIFontWeightRegular];
@@ -452,10 +476,31 @@ extern double          totalBookDuration;
     UIView *section                                   = [[UIView alloc] init];
     section.translatesAutoresizingMaskIntoConstraints = NO;
 
-    self.hardcoverHeaderLabel           = [[UILabel alloc] init];
-    self.hardcoverHeaderLabel.text      = @"Hardcover";
-    self.hardcoverHeaderLabel.font      = [UIFont systemFontOfSize:18 weight:UIFontWeightSemibold];
-    self.hardcoverHeaderLabel.textColor = UIColor.labelColor;
+    self.hardcoverHeaderLabel      = [[UILabel alloc] init];
+    self.hardcoverHeaderLabel.text = @"Hardcover";
+    self.hardcoverHeaderLabel.font = [UIFont systemFontOfSize:18 weight:UIFontWeightSemibold];
+
+    self.currentlyReadingContainer                     = [[UIView alloc] init];
+    self.currentlyReadingContainer.backgroundColor     = UIColor.tertiarySystemBackgroundColor;
+    self.currentlyReadingContainer.layer.cornerRadius  = 12;
+    self.currentlyReadingContainer.layer.masksToBounds = YES;
+    self.currentlyReadingContainer.translatesAutoresizingMaskIntoConstraints = NO;
+    self.currentlyReadingContainer.hidden                                    = YES;
+
+    self.currentlyReadingScroll = [[UIScrollView alloc] init];
+    self.currentlyReadingScroll.translatesAutoresizingMaskIntoConstraints = NO;
+    self.currentlyReadingScroll.alwaysBounceVertical                      = NO;
+    self.currentlyReadingScroll.alwaysBounceHorizontal                    = YES;
+    self.currentlyReadingScroll.showsVerticalScrollIndicator              = NO;
+
+    self.currentlyReadingStack           = [[UIStackView alloc] init];
+    self.currentlyReadingStack.axis      = UILayoutConstraintAxisHorizontal;
+    self.currentlyReadingStack.spacing   = 12;
+    self.currentlyReadingStack.alignment = UIStackViewAlignmentFill;
+    self.currentlyReadingStack.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.currentlyReadingScroll addSubview:self.currentlyReadingStack];
+    [self.currentlyReadingContainer addSubview:self.currentlyReadingScroll];
+    self.hardcoverHeaderLabel.textColor                                 = UIColor.labelColor;
     self.hardcoverHeaderLabel.translatesAutoresizingMaskIntoConstraints = NO;
 
     self.apiTokenField                     = [[UITextField alloc] init];
@@ -500,6 +545,7 @@ extern double          totalBookDuration;
     [section addSubview:self.authorizeButton];
     [section addSubview:self.hardcoverSpinner];
     [section addSubview:self.userProfileView];
+    [section addSubview:self.currentlyReadingContainer];
 
     [NSLayoutConstraint activateConstraints:@[
         [self.hardcoverHeaderLabel.topAnchor constraintEqualToAnchor:section.topAnchor],
@@ -530,6 +576,45 @@ extern double          totalBookDuration;
         [self.userProfileView.leadingAnchor constraintEqualToAnchor:section.leadingAnchor],
         [self.userProfileView.trailingAnchor constraintEqualToAnchor:section.trailingAnchor],
         [self.userProfileView.heightAnchor constraintEqualToConstant:48],
+
+        [self.currentlyReadingContainer.topAnchor
+            constraintEqualToAnchor:self.userProfileView.bottomAnchor
+                           constant:8],
+        [self.currentlyReadingContainer.leadingAnchor
+            constraintEqualToAnchor:section.leadingAnchor],
+        [self.currentlyReadingContainer.trailingAnchor
+            constraintEqualToAnchor:section.trailingAnchor],
+        [self.currentlyReadingContainer.heightAnchor constraintEqualToConstant:140],
+
+        [self.currentlyReadingScroll.frameLayoutGuide.leadingAnchor
+            constraintEqualToAnchor:self.currentlyReadingContainer.leadingAnchor],
+        [self.currentlyReadingScroll.frameLayoutGuide.trailingAnchor
+            constraintEqualToAnchor:self.currentlyReadingContainer.trailingAnchor],
+        [self.currentlyReadingScroll.frameLayoutGuide.topAnchor
+            constraintEqualToAnchor:self.currentlyReadingContainer.topAnchor],
+        [self.currentlyReadingScroll.frameLayoutGuide.bottomAnchor
+            constraintEqualToAnchor:self.currentlyReadingContainer.bottomAnchor],
+
+        [self.currentlyReadingStack.leadingAnchor
+            constraintEqualToAnchor:self.currentlyReadingScroll.contentLayoutGuide.leadingAnchor
+                           constant:12],
+        [self.currentlyReadingStack.trailingAnchor
+            constraintEqualToAnchor:self.currentlyReadingScroll.contentLayoutGuide.trailingAnchor
+                           constant:-12],
+        // Make content height equal to visible height so it doesn't vertically scroll
+        [self.currentlyReadingScroll.contentLayoutGuide.heightAnchor
+            constraintEqualToAnchor:self.currentlyReadingScroll.frameLayoutGuide.heightAnchor],
+        // Center the horizontal stack vertically with equal min insets
+        [self.currentlyReadingStack.centerYAnchor
+            constraintEqualToAnchor:self.currentlyReadingScroll.contentLayoutGuide.centerYAnchor],
+        [self.currentlyReadingStack.topAnchor
+            constraintGreaterThanOrEqualToAnchor:self.currentlyReadingScroll.contentLayoutGuide
+                                                     .topAnchor
+                                        constant:10],
+        [self.currentlyReadingStack.bottomAnchor
+            constraintLessThanOrEqualToAnchor:self.currentlyReadingScroll.contentLayoutGuide
+                                                  .bottomAnchor
+                                     constant:-10],
 
         [section.bottomAnchor constraintEqualToAnchor:self.authorizeButton.bottomAnchor]
     ]];
@@ -889,7 +974,9 @@ extern double          totalBookDuration;
             [NSString stringWithFormat:@"@%@", user.username ?: @"unknown"];
     }
 
-    NSInteger books               = user.books_count ? user.books_count.integerValue : 0;
+    NSInteger books = user.books_count ? user.books_count.integerValue : 0;
+
+    [self loadCurrentlyReadingForUser:user];
     NSInteger followers           = user.followers_count ? user.followers_count.integerValue : 0;
     self.booksCountLabel.text     = [NSString stringWithFormat:@"%ld", (long) books];
     self.followersCountLabel.text = [NSString stringWithFormat:@"%ld", (long) followers];
@@ -983,7 +1070,248 @@ extern double          totalBookDuration;
                      }
                      [[self.hardcoverSection.bottomAnchor
                          constraintEqualToAnchor:self.authorizeButton.bottomAnchor] setActive:YES];
+                     self.currentlyReadingContainer.hidden = YES;
                  }];
+}
+
+#pragma mark - Currently Reading UI
+
+- (void)loadCurrentlyReadingForUser:(HardcoverUser *)user
+{
+    if (!user || !user.userId)
+    {
+        return;
+    }
+    __weak typeof(self) weakSelf = self;
+    [[HardcoverAPI sharedInstance]
+        fetchCurrentlyReadingForUserId:user.userId
+                            completion:^(NSArray *items, NSError *error) {
+                                if (error)
+                                {
+                                    return;
+                                }
+                                weakSelf.currentlyReadingItems = items;
+                                [weakSelf renderCurrentlyReading];
+                            }];
+}
+
+- (void)renderCurrentlyReading
+{
+    for (UIView *v in self.currentlyReadingStack.arrangedSubviews)
+    {
+        [self.currentlyReadingStack removeArrangedSubview:v];
+        [v removeFromSuperview];
+    }
+    if (self.currentlyReadingItems.count == 0)
+    {
+        self.currentlyReadingContainer.hidden = YES;
+        [self adjustHardcoverSectionBottomTo:self.userProfileView];
+        return;
+    }
+    self.currentlyReadingContainer.hidden = NO;
+    [self adjustHardcoverSectionBottomTo:self.currentlyReadingContainer];
+
+    extern NSString *currentASIN;
+    extern NSString *currentContentID;
+    const CGFloat    kPillWidth = 112.0;
+    for (NSDictionary *item in self.currentlyReadingItems)
+    {
+        NSString *title    = item[@"title"] ?: @"";
+        NSString *coverURL = item[@"coverURL"] ?: @"";
+        NSArray  *asins = ([item[@"asins"] isKindOfClass:[NSArray class]] ? item[@"asins"] : @[]);
+
+        UIView *tile                                                   = [[UIView alloc] init];
+        tile.translatesAutoresizingMaskIntoConstraints                 = NO;
+        [tile.widthAnchor constraintEqualToConstant:kPillWidth].active = YES;
+        const CGFloat kTileInset                                       = 10.0;
+        UIView       *topSpacer                                        = [[UIView alloc] init];
+        topSpacer.translatesAutoresizingMaskIntoConstraints            = NO;
+        topSpacer.backgroundColor                                      = UIColor.clearColor;
+        [tile addSubview:topSpacer];
+        [NSLayoutConstraint activateConstraints:@[
+            [topSpacer.topAnchor constraintEqualToAnchor:tile.topAnchor],
+            [topSpacer.leadingAnchor constraintEqualToAnchor:tile.leadingAnchor],
+            [topSpacer.trailingAnchor constraintEqualToAnchor:tile.trailingAnchor],
+            [topSpacer.heightAnchor constraintEqualToConstant:kTileInset]
+        ]];
+
+        UIView *pill                                   = [[UIView alloc] init];
+        pill.translatesAutoresizingMaskIntoConstraints = NO;
+        pill.backgroundColor                           = UIColor.systemBackgroundColor;
+        pill.layer.cornerRadius                        = 12;
+        pill.layer.masksToBounds                       = YES;
+        pill.layer.borderWidth                         = 1.0;
+        pill.layer.borderColor                         = UIColor.systemGray3Color.CGColor;
+
+        UIImageView *cover                              = [[UIImageView alloc] init];
+        cover.translatesAutoresizingMaskIntoConstraints = NO;
+        cover.contentMode                               = UIViewContentModeScaleAspectFill;
+        cover.backgroundColor                           = UIColor.secondarySystemBackgroundColor;
+        cover.layer.cornerRadius                        = 8;
+        cover.layer.masksToBounds                       = YES;
+        [cover.widthAnchor constraintEqualToConstant:48].active  = YES;
+        [cover.heightAnchor constraintEqualToConstant:72].active = YES;
+
+        UILabel *titleLabel      = [self labelWithFont:12 weight:UIFontWeightRegular];
+        titleLabel.numberOfLines = 1;
+        titleLabel.text          = title;
+        titleLabel.textColor     = UIColor.labelColor;
+        titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+        titleLabel.lineBreakMode                             = NSLineBreakByClipping;
+        titleLabel.adjustsFontSizeToFitWidth                 = NO;
+
+        UIScrollView *titleMarquee                             = [[UIScrollView alloc] init];
+        titleMarquee.translatesAutoresizingMaskIntoConstraints = NO;
+        titleMarquee.showsHorizontalScrollIndicator            = NO;
+        titleMarquee.showsVerticalScrollIndicator              = NO;
+        titleMarquee.scrollEnabled                             = NO;
+        [titleMarquee addSubview:titleLabel];
+        __block NSLayoutConstraint *titleLeadingC =
+            [titleLabel.leadingAnchor constraintEqualToAnchor:titleMarquee.leadingAnchor];
+        __block NSLayoutConstraint *titleCenterC =
+            [titleLabel.centerXAnchor constraintEqualToAnchor:titleMarquee.centerXAnchor];
+        titleLeadingC.active = YES;
+        titleCenterC.active  = NO;
+        [NSLayoutConstraint activateConstraints:@[
+            [titleLabel.topAnchor constraintEqualToAnchor:titleMarquee.topAnchor],
+            [titleLabel.bottomAnchor constraintEqualToAnchor:titleMarquee.bottomAnchor]
+        ]];
+
+        UIStackView *v = [[UIStackView alloc] initWithArrangedSubviews:@[ cover, titleMarquee ]];
+        v.axis         = UILayoutConstraintAxisVertical;
+        v.alignment    = UIStackViewAlignmentCenter;
+        v.spacing      = 6;
+        v.translatesAutoresizingMaskIntoConstraints = NO;
+
+        UIStackView *h = [[UIStackView alloc] initWithArrangedSubviews:@[ v ]];
+        h.axis         = UILayoutConstraintAxisHorizontal;
+        h.alignment    = UIStackViewAlignmentCenter;
+        h.spacing      = 10;
+        h.translatesAutoresizingMaskIntoConstraints = NO;
+
+        [pill addSubview:h];
+        [NSLayoutConstraint activateConstraints:@[
+            [h.leadingAnchor constraintEqualToAnchor:pill.leadingAnchor constant:12],
+            [h.trailingAnchor constraintEqualToAnchor:pill.trailingAnchor constant:-12],
+            [h.topAnchor constraintEqualToAnchor:pill.topAnchor constant:10],
+            [h.bottomAnchor constraintEqualToAnchor:pill.bottomAnchor constant:-10]
+        ]];
+        [tile addSubview:pill];
+        [NSLayoutConstraint activateConstraints:@[
+            [pill.topAnchor constraintEqualToAnchor:topSpacer.bottomAnchor],
+            [pill.leadingAnchor constraintEqualToAnchor:tile.leadingAnchor],
+            [pill.trailingAnchor constraintEqualToAnchor:tile.trailingAnchor],
+            [pill.bottomAnchor constraintEqualToAnchor:tile.bottomAnchor constant:-kTileInset]
+        ]];
+
+        [self.currentlyReadingStack addArrangedSubview:tile];
+
+        if (coverURL.length > 0)
+        {
+            [self loadImageFromURL:coverURL intoImageView:cover];
+        }
+        else
+        {
+            cover.image       = [UIImage systemImageNamed:@"book.fill"];
+            cover.contentMode = UIViewContentModeScaleAspectFit;
+        }
+
+        BOOL matchesASIN = NO;
+        if (currentASIN && currentASIN.length > 0)
+        {
+            for (NSString *a in asins)
+            {
+                if ([a isKindOfClass:[NSString class]] && [a isEqualToString:currentASIN])
+                {
+                    matchesASIN = YES;
+                    break;
+                }
+            }
+        }
+        BOOL matchesContent = NO;
+        if (currentContentID && currentContentID.length > 0)
+        {
+            for (NSString *a in asins)
+            {
+                if ([a isKindOfClass:[NSString class]] && [a isEqualToString:currentContentID])
+                {
+                    matchesContent = YES;
+                    break;
+                }
+            }
+        }
+        if (matchesASIN || matchesContent)
+        {
+            // Subtle green border + glow to indicate selected sync item
+            pill.layer.borderColor  = UIColor.systemGreenColor.CGColor;
+            pill.layer.shadowColor  = UIColor.systemGreenColor.CGColor;
+            pill.layer.shadowRadius = 8.0;
+            pill.layer.shadowOffset = CGSizeZero;
+            // Animate a very subtle breathing glow
+            CABasicAnimation *glow = [CABasicAnimation animationWithKeyPath:@"shadowOpacity"];
+            glow.fromValue         = @(0.0);
+            glow.toValue           = @(0.25);
+            glow.duration          = 1.2;
+            glow.autoreverses      = YES;
+            glow.repeatCount       = HUGE_VALF;
+            // Also animate border width slightly for a light saber-y shimmer
+            CABasicAnimation *border = [CABasicAnimation animationWithKeyPath:@"borderWidth"];
+            border.fromValue         = @(1.0);
+            border.toValue           = @(1.8);
+            border.duration          = 1.2;
+            border.autoreverses      = YES;
+            border.repeatCount       = HUGE_VALF;
+            // Apply base values and start animations
+            pill.layer.shadowOpacity = 0.25;
+            pill.layer.borderWidth   = 1.0;
+            [pill.layer addAnimation:glow forKey:@"chronosGlowOpacity"];
+            [pill.layer addAnimation:border forKey:@"chronosBorderPulse"];
+        }
+
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t) (0.1 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+                           CGFloat labelWidth =
+                               [titleLabel sizeThatFits:CGSizeMake(CGFLOAT_MAX, 16)].width;
+                           CGFloat marqueeWidth = kPillWidth - 24.0;
+                           [NSLayoutConstraint activateConstraints:@[
+                               [titleMarquee.heightAnchor constraintEqualToConstant:16],
+                               [titleMarquee.widthAnchor constraintEqualToConstant:marqueeWidth]
+                           ]];
+                           if (labelWidth <= marqueeWidth)
+                           {
+                               titleLeadingC.active       = NO;
+                               titleCenterC.active        = YES;
+                               titleLabel.textAlignment   = NSTextAlignmentCenter;
+                               titleMarquee.contentOffset = CGPointZero;
+                           }
+                           else
+                           {
+                               titleCenterC.active      = NO;
+                               titleLeadingC.active     = YES;
+                               titleLabel.textAlignment = NSTextAlignmentLeft;
+                               Chronos_StartMarquee(titleMarquee, labelWidth, marqueeWidth);
+                           }
+                       });
+    }
+}
+
+- (void)adjustHardcoverSectionBottomTo:(UIView *)bottomView
+{
+    NSLayoutConstraint *bottomConstraint = nil;
+    for (NSLayoutConstraint *constraint in self.hardcoverSection.constraints)
+    {
+        if (constraint.firstAnchor == self.hardcoverSection.bottomAnchor)
+        {
+            bottomConstraint = constraint;
+            break;
+        }
+    }
+    if (bottomConstraint)
+    {
+        [self.hardcoverSection removeConstraint:bottomConstraint];
+    }
+    [[self.hardcoverSection.bottomAnchor constraintEqualToAnchor:bottomView.bottomAnchor]
+        setActive:YES];
 }
 
 - (void)editHardcoverToken
@@ -1053,12 +1381,9 @@ extern double          totalBookDuration;
     if (!url)
         return;
     SFSafariViewController *safari = [[SFSafariViewController alloc] initWithURL:url];
-    if (@available(iOS 11.0, *))
-    {
-        safari.dismissButtonStyle = SFSafariViewControllerDismissButtonStyleClose;
-    }
-    safari.delegate               = self;
-    safari.modalPresentationStyle = UIModalPresentationPageSheet;
+    safari.dismissButtonStyle      = SFSafariViewControllerDismissButtonStyleClose;
+    safari.delegate                = self;
+    safari.modalPresentationStyle  = UIModalPresentationPageSheet;
     [self.navigationController presentViewController:safari animated:YES completion:nil];
 }
 
@@ -1068,12 +1393,9 @@ extern double          totalBookDuration;
     if (!url)
         return;
     SFSafariViewController *safari = [[SFSafariViewController alloc] initWithURL:url];
-    if (@available(iOS 11.0, *))
-    {
-        safari.dismissButtonStyle = SFSafariViewControllerDismissButtonStyleClose;
-    }
-    safari.delegate               = self;
-    safari.modalPresentationStyle = UIModalPresentationPageSheet;
+    safari.dismissButtonStyle      = SFSafariViewControllerDismissButtonStyleClose;
+    safari.delegate                = self;
+    safari.modalPresentationStyle  = UIModalPresentationPageSheet;
     [self.navigationController presentViewController:safari animated:YES completion:nil];
 }
 
@@ -1081,7 +1403,6 @@ extern double          totalBookDuration;
 
 - (void)safariViewControllerDidFinish:(SFSafariViewController *)controller
 {
-    // Ensure only the Safari VC is dismissed, not our menu sheet
     [controller dismissViewControllerAnimated:YES completion:nil];
 }
 
@@ -1092,6 +1413,8 @@ extern double          totalBookDuration;
     if (!user)
         return;
     NSMutableDictionary *dict = [NSMutableDictionary dictionary];
+    if (user.userId)
+        dict[@"userId"] = user.userId;
     if (user.username)
         dict[@"username"] = user.username;
     if (user.name)
@@ -1113,6 +1436,7 @@ extern double          totalBookDuration;
     if (![dict isKindOfClass:[NSDictionary class]])
         return nil;
     HardcoverUser *user  = [HardcoverUser new];
+    user.userId          = dict[@"userId"];
     user.username        = dict[@"username"];
     user.name            = dict[@"name"];
     user.imageURL        = dict[@"imageURL"];

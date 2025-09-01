@@ -92,11 +92,9 @@ void ShowChronosMenuSheet(UIViewController *presentingVC)
         UISheetPresentationController *sheet = navController.sheetPresentationController;
         if (sheet)
         {
-            // Lock to medium detent only for a compact feel and prevent arbitrary resizing
             sheet.detents               = @[ [UISheetPresentationControllerDetent mediumDetent] ];
             sheet.prefersGrabberVisible = YES;
             sheet.prefersScrollingExpandsWhenScrolledToEdge = YES;
-            // Leave background dimming at defaults for a clean look
             sheet.preferredCornerRadius    = 16.0;
             sheet.selectedDetentIdentifier = UISheetPresentationControllerDetentIdentifierMedium;
         }
