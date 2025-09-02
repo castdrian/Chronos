@@ -48,7 +48,8 @@
 
     [self makeGraphQLRequest:@"query Me { me { id username birthdate books_count flair "
                              @"followers_count followed_users_count location name pro "
-                             @"pronoun_personal pronoun_possessive sign_in_count image { url } } }"
+                             @"pronoun_personal pronoun_possessive sign_in_count image { url } "
+                             @"librarian_roles } }"
               withCompletion:^(NSDictionary *response, NSError *error) {
                   if (error)
                   {
@@ -108,7 +109,18 @@
                   id signInCntVal = userDict[@"sign_in_count"];
                   user.sign_in_count =
                       [signInCntVal isKindOfClass:[NSNumber class]] ? signInCntVal : nil;
-                  user.pro = [userDict[@"pro"] boolValue];
+                  user.pro    = [userDict[@"pro"] boolValue];
+                  id rolesVal = userDict[@"librarian_roles"];
+                  if ([rolesVal isKindOfClass:[NSArray class]])
+                  {
+                      NSMutableArray *roles = [NSMutableArray array];
+                      for (id r in (NSArray *) rolesVal)
+                      {
+                          if ([r isKindOfClass:[NSString class]])
+                              [roles addObject:r];
+                      }
+                      user.librarian_roles = roles.count ? roles : nil;
+                  }
 
                   self.currentUser  = user;
                   self.isAuthorized = YES;

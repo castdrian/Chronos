@@ -17,6 +17,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, strong, nullable) NSNumber *followed_users_count;
 @property (nonatomic, strong, nullable) NSNumber *sign_in_count;
 @property (nonatomic, assign) BOOL pro;
+@property (nonatomic, strong, nullable) NSArray<NSString *> *librarian_roles;
 @end
 
 @interface HardcoverAPI : NSObject

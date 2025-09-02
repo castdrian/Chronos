@@ -31,6 +31,7 @@ extern double          totalBookDuration;
 @property (nonatomic, strong) UIImageView             *userAvatarView;
 @property (nonatomic, strong) UILabel                 *userNameLabel;
 @property (nonatomic, strong) UIStackView             *userStatsStack;
+@property (nonatomic, strong) UIView                  *librarianBadge;
 @property (nonatomic, strong) UILabel                 *booksCountLabel;
 @property (nonatomic, strong) UILabel                 *followersCountLabel;
 @property (nonatomic, strong) UIActivityIndicatorView *hardcoverSpinner;
@@ -436,6 +437,17 @@ extern double          totalBookDuration;
     return bg;
 }
 
+- (UIView *)librarianBadgeChip
+{
+    UILabel *label          = [self labelWithFont:12 weight:UIFontWeightSemibold];
+    label.text              = @"Librarian";
+    label.textColor         = UIColor.whiteColor;
+    UIView *chip            = [self chipWithIcon:@"book.fill" label:label];
+    chip.backgroundColor    = [UIColor colorWithRed:0.42 green:0.15 blue:0.73 alpha:1.0];
+    chip.layer.cornerRadius = 10;
+    return chip;
+}
+
 - (UIControl *)tappableChipWithIcon:(NSString *)systemName label:(UILabel *)label action:(SEL)action
 {
     UIView *bg                = [self chipWithIcon:systemName label:label];
@@ -673,11 +685,21 @@ extern double          totalBookDuration;
     usernameLabel.tag           = 500;
     usernameLabel.translatesAutoresizingMaskIntoConstraints = NO;
 
-    UIStackView *nameStack =
+    UIStackView *nameColumn =
         [[UIStackView alloc] initWithArrangedSubviews:@[ self.userNameLabel, usernameLabel ]];
-    nameStack.axis                                      = UILayoutConstraintAxisVertical;
-    nameStack.spacing                                   = 2;
-    nameStack.alignment                                 = UIStackViewAlignmentLeading;
+    nameColumn.axis                                      = UILayoutConstraintAxisVertical;
+    nameColumn.spacing                                   = 2;
+    nameColumn.alignment                                 = UIStackViewAlignmentLeading;
+    nameColumn.translatesAutoresizingMaskIntoConstraints = NO;
+
+    self.librarianBadge        = [self librarianBadgeChip];
+    self.librarianBadge.hidden = YES;
+
+    UIStackView *nameStack =
+        [[UIStackView alloc] initWithArrangedSubviews:@[ nameColumn, self.librarianBadge ]];
+    nameStack.axis                                      = UILayoutConstraintAxisHorizontal;
+    nameStack.spacing                                   = 8;
+    nameStack.alignment                                 = UIStackViewAlignmentCenter;
     nameStack.translatesAutoresizingMaskIntoConstraints = NO;
 
     self.booksCountLabel               = [[UILabel alloc] init];
@@ -1034,6 +1056,18 @@ extern double          totalBookDuration;
         self.userAvatarView.image     = [UIImage systemImageNamed:@"person.circle.fill"];
         self.userAvatarView.tintColor = UIColor.systemGrayColor;
     }
+
+    BOOL isLibrarian = NO;
+    for (NSString *role in (user.librarian_roles ?: @[]))
+    {
+        if ([role isKindOfClass:[NSString class]] &&
+            [[role lowercaseString] isEqualToString:@"librarian"])
+        {
+            isLibrarian = YES;
+            break;
+        }
+    }
+    self.librarianBadge.hidden = !isLibrarian;
 
     [self saveCachedHardcoverUser:user];
 
@@ -1479,6 +1513,8 @@ extern double          totalBookDuration;
         dict[@"books_count"] = user.books_count;
     if (user.followers_count)
         dict[@"followers_count"] = user.followers_count;
+    if (user.librarian_roles)
+        dict[@"librarian_roles"] = user.librarian_roles;
     [[NSUserDefaults standardUserDefaults] setObject:dict forKey:@"HardcoverCachedUser"];
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
@@ -1496,6 +1532,8 @@ extern double          totalBookDuration;
     user.imageURL        = dict[@"imageURL"];
     user.books_count     = dict[@"books_count"];
     user.followers_count = dict[@"followers_count"];
+    if ([dict[@"librarian_roles"] isKindOfClass:[NSArray class]])
+        user.librarian_roles = dict[@"librarian_roles"];
     return user;
 }
 @end
