@@ -10,6 +10,8 @@ extern double          totalBookDuration;
 #endif
 
 @interface ChronosMenuViewController () <SFSafariViewControllerDelegate>
+@property (nonatomic, strong) UIScrollView            *rootScroll;
+@property (nonatomic, strong) UIStackView             *rootStack;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) UILabel                 *titleLabel;
 @property (nonatomic, strong) UILabel                 *authorLabel;
@@ -53,40 +55,103 @@ extern double          totalBookDuration;
     self.modalPresentationStyle = UIModalPresentationPageSheet;
     self.modalTransitionStyle   = UIModalTransitionStyleCoverVertical;
     self.navigationController.navigationBar.prefersLargeTitles = NO;
+    [self configureSheetPresentation];
     [self setupUI];
     [self loadData];
     [self checkHardcoverAuth];
 }
 
+- (void)viewDidAppear:(BOOL)animated
+{
+    [super viewDidAppear:animated];
+    [self configureSheetPresentation];
+}
+
+- (void)configureSheetPresentation
+{
+    UISheetPresentationController *sheet = self.sheetPresentationController;
+    if (!sheet && self.navigationController)
+    {
+        sheet = self.navigationController.sheetPresentationController;
+    }
+    if (sheet)
+    {
+        [self.view layoutIfNeeded];
+        CGFloat screenH  = UIScreen.mainScreen.bounds.size.height;
+        CGFloat contentH = 0.0;
+        if (self.rootStack)
+        {
+            CGSize fitting =
+                [self.rootStack systemLayoutSizeFittingSize:UILayoutFittingCompressedSize];
+            contentH = fitting.height + 32.0;
+        }
+        BOOL useMedium = (contentH > 0.0) ? (contentH <= (screenH * 0.5)) : NO;
+
+        if (useMedium)
+        {
+            sheet.detents                  = @[ UISheetPresentationControllerDetent.mediumDetent ];
+            sheet.selectedDetentIdentifier = UISheetPresentationControllerDetentIdentifierMedium;
+        }
+        else
+        {
+            sheet.detents                  = @[ UISheetPresentationControllerDetent.largeDetent ];
+            sheet.selectedDetentIdentifier = UISheetPresentationControllerDetentIdentifierLarge;
+        }
+        sheet.prefersGrabberVisible                     = YES;
+        sheet.prefersScrollingExpandsWhenScrolledToEdge = NO;
+        sheet.largestUndimmedDetentIdentifier           = sheet.selectedDetentIdentifier;
+    }
+}
+
 - (void)setupUI
 {
-    CGFloat margin    = 16;
-    CGFloat spacing   = 8;
+    CGFloat margin    = 12;
+    CGFloat spacing   = 6;
     CGFloat blockFont = 18;
     CGFloat codeFont  = 15;
     CGFloat copySize  = 24;
+
+    self.rootScroll                                           = [[UIScrollView alloc] init];
+    self.rootScroll.translatesAutoresizingMaskIntoConstraints = NO;
+    self.rootScroll.alwaysBounceVertical                      = YES;
+    self.rootScroll.showsVerticalScrollIndicator              = YES;
+    [self.view addSubview:self.rootScroll];
+    [NSLayoutConstraint activateConstraints:@[
+        [self.rootScroll.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+        [self.rootScroll.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+        [self.rootScroll.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],
+        [self.rootScroll.bottomAnchor
+            constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor]
+    ]];
+
+    self.rootStack                                           = [[UIStackView alloc] init];
+    self.rootStack.axis                                      = UILayoutConstraintAxisVertical;
+    self.rootStack.spacing                                   = spacing;
+    self.rootStack.alignment                                 = UIStackViewAlignmentFill;
+    self.rootStack.distribution                              = UIStackViewDistributionFill;
+    self.rootStack.translatesAutoresizingMaskIntoConstraints = NO;
+    self.rootStack.layoutMargins = UIEdgeInsetsMake(margin, margin, margin, margin);
+    self.rootStack.layoutMarginsRelativeArrangement = YES;
+    [self.rootScroll addSubview:self.rootStack];
+    [NSLayoutConstraint activateConstraints:@[
+        [self.rootStack.leadingAnchor
+            constraintEqualToAnchor:self.rootScroll.contentLayoutGuide.leadingAnchor],
+        [self.rootStack.trailingAnchor
+            constraintEqualToAnchor:self.rootScroll.contentLayoutGuide.trailingAnchor],
+        [self.rootStack.topAnchor
+            constraintEqualToAnchor:self.rootScroll.contentLayoutGuide.topAnchor],
+        [self.rootStack.bottomAnchor
+            constraintEqualToAnchor:self.rootScroll.contentLayoutGuide.bottomAnchor],
+        [self.rootStack.widthAnchor
+            constraintEqualToAnchor:self.rootScroll.frameLayoutGuide.widthAnchor]
+    ]];
 
     UIView *card                                   = [[UIView alloc] init];
     card.backgroundColor                           = UIColor.secondarySystemBackgroundColor;
     card.layer.cornerRadius                        = 14;
     card.layer.masksToBounds                       = YES;
     card.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:card];
-    [NSLayoutConstraint activateConstraints:@[
-        [card.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:margin],
-        [card.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-margin],
-        [card.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor
-                                       constant:margin],
-        [card.bottomAnchor
-            constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor
-                                     constant:-margin]
-    ]];
-    [NSLayoutConstraint activateConstraints:@[
-        [card.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:margin],
-        [card.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-margin],
-        [card.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor
-                                       constant:margin]
-    ]];
+    [self.rootStack addArrangedSubview:card];
 
     self.spinner                                           = [[UIActivityIndicatorView alloc]
         initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleLarge];
@@ -202,21 +267,12 @@ extern double          totalBookDuration;
     hardcoverCard.layer.cornerRadius  = 14;
     hardcoverCard.layer.masksToBounds = YES;
     hardcoverCard.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:hardcoverCard];
+    [self.rootStack addArrangedSubview:hardcoverCard];
 
     self.hardcoverSection = [self setupHardcoverSection];
     [hardcoverCard addSubview:self.hardcoverSection];
 
     [NSLayoutConstraint activateConstraints:@[
-        [hardcoverCard.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor
-                                                    constant:margin],
-        [hardcoverCard.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor
-                                                     constant:-margin],
-        [hardcoverCard.topAnchor constraintEqualToAnchor:card.bottomAnchor constant:spacing],
-        [hardcoverCard.bottomAnchor
-            constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor
-                                     constant:-margin],
-
         [self.hardcoverSection.leadingAnchor constraintEqualToAnchor:hardcoverCard.leadingAnchor
                                                             constant:margin],
         [self.hardcoverSection.trailingAnchor constraintEqualToAnchor:hardcoverCard.trailingAnchor
@@ -232,7 +288,7 @@ extern double          totalBookDuration;
     aboutCard.layer.cornerRadius                        = 14;
     aboutCard.layer.masksToBounds                       = YES;
     aboutCard.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:aboutCard];
+    [self.rootStack addArrangedSubview:aboutCard];
 
     UILabel *versionTextLabel = [self labelWithFont:13 weight:UIFontWeightRegular];
     versionTextLabel.text     = [NSString stringWithFormat:@"v%@", PACKAGE_VERSION];
@@ -261,14 +317,6 @@ extern double          totalBookDuration;
     [aboutCard addSubview:aboutRow];
 
     [NSLayoutConstraint activateConstraints:@[
-        [aboutCard.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:margin],
-        [aboutCard.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor
-                                                 constant:-margin],
-        [aboutCard.topAnchor constraintEqualToAnchor:hardcoverCard.bottomAnchor constant:spacing],
-        [aboutCard.bottomAnchor
-            constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor
-                                     constant:-margin],
-
         [aboutRow.leadingAnchor constraintEqualToAnchor:aboutCard.leadingAnchor constant:margin],
         [aboutRow.trailingAnchor constraintLessThanOrEqualToAnchor:aboutCard.trailingAnchor
                                                           constant:-margin],
@@ -561,7 +609,7 @@ extern double          totalBookDuration;
             constraintEqualToAnchor:section.leadingAnchor],
         [self.currentlyReadingContainer.trailingAnchor
             constraintEqualToAnchor:section.trailingAnchor],
-        [self.currentlyReadingContainer.heightAnchor constraintEqualToConstant:140],
+        [self.currentlyReadingContainer.heightAnchor constraintEqualToConstant:176],
 
         [self.currentlyReadingScroll.frameLayoutGuide.leadingAnchor
             constraintEqualToAnchor:self.currentlyReadingContainer.leadingAnchor],
@@ -715,11 +763,13 @@ extern double          totalBookDuration;
 {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         [NSThread sleepForTimeInterval:0.7];
-        NSDictionary *info         = [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo;
-        NSString     *bookTitle    = info[MPMediaItemPropertyAlbumTitle] ?: @"";
-        NSString     *chapterTitle = info[MPMediaItemPropertyTitle] ?: @"";
-        NSString     *author       = info[MPMediaItemPropertyArtist] ?: @"";
-        NSNumber     *elapsed      = info[MPNowPlayingInfoPropertyElapsedPlaybackTime];
+        NSDictionary *info      = [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo;
+        NSString     *bookTitle = info[MPMediaItemPropertyAlbumTitle];
+        if (bookTitle.length == 0)
+            bookTitle = info[MPMediaItemPropertyTitle] ?: @"";
+        NSString *chapterTitle = info[MPMediaItemPropertyTitle] ?: @"";
+        NSString *author       = info[MPMediaItemPropertyArtist] ?: @"";
+        NSNumber *elapsed      = info[MPNowPlayingInfoPropertyElapsedPlaybackTime];
 
         extern double          totalBookDuration;
         extern NSMutableArray *allChapters;
@@ -763,6 +813,7 @@ extern double          totalBookDuration;
         NSString        *contentId = currentContentID ?: info[@"contentId"] ?: @"";
         dispatch_async(dispatch_get_main_queue(), ^{
             [self.spinner stopAnimating];
+            self.spinner.hidden     = YES;
             UIView *stack           = [self.view viewWithTag:101];
             stack.hidden            = NO;
             self.titleLabel.text    = bookTitle.length ? bookTitle : @"(No Book Title)";
@@ -781,6 +832,7 @@ extern double          totalBookDuration;
             [self.contentIdCopyButton addTarget:self
                                          action:@selector(copyContentId)
                                forControlEvents:UIControlEventTouchUpInside];
+            [self configureSheetPresentation];
         });
     });
 }
@@ -1008,6 +1060,7 @@ extern double          totalBookDuration;
                      [[self.hardcoverSection.bottomAnchor
                          constraintEqualToAnchor:self.userProfileView.bottomAnchor] setActive:YES];
                  }];
+    [self configureSheetPresentation];
 }
 
 - (void)showHardcoverLoginUI
@@ -1047,6 +1100,7 @@ extern double          totalBookDuration;
                          constraintEqualToAnchor:self.authorizeButton.bottomAnchor] setActive:YES];
                      self.currentlyReadingContainer.hidden = YES;
                  }];
+    [self configureSheetPresentation];
 }
 
 #pragma mark - Currently Reading UI
@@ -1088,7 +1142,7 @@ extern double          totalBookDuration;
 
     extern NSString *currentASIN;
     extern NSString *currentContentID;
-    const CGFloat    kPillWidth = 112.0;
+    const CGFloat    kPillWidth = 96.0;
     for (NSDictionary *item in self.currentlyReadingItems)
     {
         NSString *title    = item[@"title"] ?: @"";
@@ -1110,67 +1164,103 @@ extern double          totalBookDuration;
             [topSpacer.heightAnchor constraintEqualToConstant:kTileInset]
         ]];
 
-        UIView *pill                                   = [[UIView alloc] init];
-        pill.translatesAutoresizingMaskIntoConstraints = NO;
-        pill.backgroundColor                           = UIColor.systemBackgroundColor;
-        pill.layer.cornerRadius                        = 12;
-        pill.layer.masksToBounds                       = YES;
-        pill.layer.borderWidth                         = 1.0;
-        pill.layer.borderColor                         = UIColor.systemGray3Color.CGColor;
-
+        UIView *pill                                    = [[UIView alloc] init];
+        pill.translatesAutoresizingMaskIntoConstraints  = NO;
+        pill.backgroundColor                            = UIColor.systemBackgroundColor;
+        pill.layer.cornerRadius                         = 12;
+        pill.layer.masksToBounds                        = YES;
+        pill.layer.borderWidth                          = 1.0;
+        pill.layer.borderColor                          = UIColor.systemGray3Color.CGColor;
         UIImageView *cover                              = [[UIImageView alloc] init];
         cover.translatesAutoresizingMaskIntoConstraints = NO;
-        cover.contentMode                               = UIViewContentModeScaleAspectFill;
+        cover.contentMode                               = UIViewContentModeScaleAspectFit;
         cover.backgroundColor                           = UIColor.secondarySystemBackgroundColor;
-        cover.layer.cornerRadius                        = 8;
         cover.layer.masksToBounds                       = YES;
-        [cover.widthAnchor constraintEqualToConstant:48].active  = YES;
-        [cover.heightAnchor constraintEqualToConstant:72].active = YES;
+        cover.alpha                                     = 0.9;
+        [pill addSubview:cover];
+        [NSLayoutConstraint activateConstraints:@[
+            [cover.leadingAnchor constraintEqualToAnchor:pill.leadingAnchor],
+            [cover.trailingAnchor constraintEqualToAnchor:pill.trailingAnchor],
+            [cover.topAnchor constraintEqualToAnchor:pill.topAnchor],
+            [cover.bottomAnchor constraintEqualToAnchor:pill.bottomAnchor]
+        ]];
 
-        UILabel *titleLabel      = [self labelWithFont:12 weight:UIFontWeightRegular];
+        UIView *overlay                                   = [[UIView alloc] init];
+        overlay.translatesAutoresizingMaskIntoConstraints = NO;
+        overlay.backgroundColor                           = UIColor.clearColor;
+        [pill addSubview:overlay];
+        [NSLayoutConstraint activateConstraints:@[
+            [overlay.leadingAnchor constraintEqualToAnchor:pill.leadingAnchor constant:8],
+            [overlay.trailingAnchor constraintEqualToAnchor:pill.trailingAnchor constant:-8],
+            [overlay.bottomAnchor constraintEqualToAnchor:pill.bottomAnchor constant:-8],
+            [overlay.topAnchor constraintGreaterThanOrEqualToAnchor:pill.topAnchor constant:8]
+        ]];
+
+        UILabel *titleLabel      = [self labelWithFont:12 weight:UIFontWeightSemibold];
         titleLabel.numberOfLines = 1;
         titleLabel.text          = title;
-        titleLabel.textColor     = UIColor.labelColor;
+        titleLabel.textColor     = UIColor.whiteColor;
         titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
-        titleLabel.lineBreakMode                             = NSLineBreakByClipping;
-        titleLabel.adjustsFontSizeToFitWidth                 = NO;
+        titleLabel.lineBreakMode                             = NSLineBreakByTruncatingTail;
+
+        UIView *titleChip                                   = [[UIView alloc] init];
+        titleChip.translatesAutoresizingMaskIntoConstraints = NO;
+        titleChip.backgroundColor                           = [UIColor colorWithWhite:0 alpha:0.6];
+        titleChip.layer.cornerRadius                        = 8;
+        titleChip.layer.masksToBounds                       = YES;
+        [titleChip addSubview:titleLabel];
+        [overlay addSubview:titleChip];
+        [NSLayoutConstraint activateConstraints:@[
+            [titleLabel.leadingAnchor constraintEqualToAnchor:titleChip.leadingAnchor constant:8],
+            [titleLabel.trailingAnchor constraintEqualToAnchor:titleChip.trailingAnchor
+                                                      constant:-8],
+            [titleLabel.topAnchor constraintEqualToAnchor:titleChip.topAnchor constant:4],
+            [titleLabel.bottomAnchor constraintEqualToAnchor:titleChip.bottomAnchor constant:-4],
+            [titleChip.centerXAnchor constraintEqualToAnchor:overlay.centerXAnchor],
+            [titleChip.bottomAnchor constraintEqualToAnchor:overlay.bottomAnchor]
+        ]];
 
         UIScrollView *titleMarquee                             = [[UIScrollView alloc] init];
         titleMarquee.translatesAutoresizingMaskIntoConstraints = NO;
         titleMarquee.showsHorizontalScrollIndicator            = NO;
         titleMarquee.showsVerticalScrollIndicator              = NO;
         titleMarquee.scrollEnabled                             = NO;
-        [titleMarquee addSubview:titleLabel];
+        UILabel *scrollingLabel      = [self labelWithFont:12 weight:UIFontWeightSemibold];
+        scrollingLabel.text          = title;
+        scrollingLabel.textColor     = UIColor.whiteColor;
+        scrollingLabel.lineBreakMode = NSLineBreakByClipping;
+        [titleMarquee addSubview:scrollingLabel];
+        scrollingLabel.translatesAutoresizingMaskIntoConstraints = NO;
         __block NSLayoutConstraint *titleLeadingC =
-            [titleLabel.leadingAnchor constraintEqualToAnchor:titleMarquee.leadingAnchor];
+            [scrollingLabel.leadingAnchor constraintEqualToAnchor:titleMarquee.leadingAnchor];
         __block NSLayoutConstraint *titleCenterC =
-            [titleLabel.centerXAnchor constraintEqualToAnchor:titleMarquee.centerXAnchor];
+            [scrollingLabel.centerXAnchor constraintEqualToAnchor:titleMarquee.centerXAnchor];
         titleLeadingC.active = YES;
         titleCenterC.active  = NO;
         [NSLayoutConstraint activateConstraints:@[
-            [titleLabel.topAnchor constraintEqualToAnchor:titleMarquee.topAnchor],
-            [titleLabel.bottomAnchor constraintEqualToAnchor:titleMarquee.bottomAnchor]
+            [scrollingLabel.topAnchor constraintEqualToAnchor:titleMarquee.topAnchor],
+            [scrollingLabel.bottomAnchor constraintEqualToAnchor:titleMarquee.bottomAnchor]
         ]];
 
-        UIStackView *v = [[UIStackView alloc] initWithArrangedSubviews:@[ cover, titleMarquee ]];
-        v.axis         = UILayoutConstraintAxisVertical;
-        v.alignment    = UIStackViewAlignmentCenter;
-        v.spacing      = 6;
-        v.translatesAutoresizingMaskIntoConstraints = NO;
-
-        UIStackView *h = [[UIStackView alloc] initWithArrangedSubviews:@[ v ]];
-        h.axis         = UILayoutConstraintAxisHorizontal;
-        h.alignment    = UIStackViewAlignmentCenter;
-        h.spacing      = 10;
-        h.translatesAutoresizingMaskIntoConstraints = NO;
-
-        [pill addSubview:h];
+        UIView *marqueeChip                                   = [[UIView alloc] init];
+        marqueeChip.translatesAutoresizingMaskIntoConstraints = NO;
+        marqueeChip.backgroundColor     = [UIColor colorWithWhite:0 alpha:0.6];
+        marqueeChip.layer.cornerRadius  = 8;
+        marqueeChip.layer.masksToBounds = YES;
+        [marqueeChip addSubview:titleMarquee];
+        [overlay addSubview:marqueeChip];
         [NSLayoutConstraint activateConstraints:@[
-            [h.leadingAnchor constraintEqualToAnchor:pill.leadingAnchor constant:12],
-            [h.trailingAnchor constraintEqualToAnchor:pill.trailingAnchor constant:-12],
-            [h.topAnchor constraintEqualToAnchor:pill.topAnchor constant:10],
-            [h.bottomAnchor constraintEqualToAnchor:pill.bottomAnchor constant:-10]
+            [titleMarquee.leadingAnchor constraintEqualToAnchor:marqueeChip.leadingAnchor
+                                                       constant:8],
+            [titleMarquee.trailingAnchor constraintEqualToAnchor:marqueeChip.trailingAnchor
+                                                        constant:-8],
+            [titleMarquee.topAnchor constraintEqualToAnchor:marqueeChip.topAnchor constant:4],
+            [titleMarquee.bottomAnchor constraintEqualToAnchor:marqueeChip.bottomAnchor
+                                                      constant:-4],
+            [marqueeChip.centerXAnchor constraintEqualToAnchor:overlay.centerXAnchor],
+            [marqueeChip.bottomAnchor constraintEqualToAnchor:overlay.bottomAnchor]
         ]];
+        marqueeChip.hidden = YES;
         [tile addSubview:pill];
         [NSLayoutConstraint activateConstraints:@[
             [pill.topAnchor constraintEqualToAnchor:topSpacer.bottomAnchor],
@@ -1178,6 +1268,7 @@ extern double          totalBookDuration;
             [pill.trailingAnchor constraintEqualToAnchor:tile.trailingAnchor],
             [pill.bottomAnchor constraintEqualToAnchor:tile.bottomAnchor constant:-kTileInset]
         ]];
+        [[pill.heightAnchor constraintGreaterThanOrEqualToConstant:148.0] setActive:YES];
 
         [self.currentlyReadingStack addArrangedSubview:tile];
 
@@ -1188,7 +1279,7 @@ extern double          totalBookDuration;
         else
         {
             cover.image       = [UIImage systemImageNamed:@"book.fill"];
-            cover.contentMode = UIViewContentModeScaleAspectFit;
+            cover.contentMode = UIViewContentModeScaleAspectFill;
         }
 
         BOOL matchesASIN = NO;
@@ -1220,34 +1311,41 @@ extern double          totalBookDuration;
             [ChronosEffects applySubtleGreenGlowToLayer:pill.layer];
         }
 
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t) (0.1 * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{
-                           CGFloat labelWidth =
-                               [titleLabel sizeThatFits:CGSizeMake(CGFLOAT_MAX, 16)].width;
-                           CGFloat marqueeWidth = kPillWidth - 24.0;
-                           [NSLayoutConstraint activateConstraints:@[
-                               [titleMarquee.heightAnchor constraintEqualToConstant:16],
-                               [titleMarquee.widthAnchor constraintEqualToConstant:marqueeWidth]
-                           ]];
-                           if (labelWidth <= marqueeWidth)
-                           {
-                               titleLeadingC.active       = NO;
-                               titleCenterC.active        = YES;
-                               titleLabel.textAlignment   = NSTextAlignmentCenter;
-                               titleMarquee.contentOffset = CGPointZero;
-                           }
-                           else
-                           {
-                               titleCenterC.active      = NO;
-                               titleLeadingC.active     = YES;
-                               titleLabel.textAlignment = NSTextAlignmentLeft;
-                               [ChronosMarquee startContinuousMarqueeIn:titleMarquee
-                                                            contentView:titleLabel
-                                                           contentWidth:labelWidth
-                                                          viewportWidth:marqueeWidth
-                                                                    gap:24.0];
-                           }
-                       });
+        dispatch_async(dispatch_get_main_queue(), ^{
+            CGFloat chipWidth    = kPillWidth - 16.0;
+            CGFloat marqueeWidth = chipWidth - 16.0;
+            [NSLayoutConstraint activateConstraints:@[
+                [titleMarquee.heightAnchor constraintEqualToConstant:16],
+                [titleMarquee.widthAnchor constraintEqualToConstant:marqueeWidth],
+                [titleChip.widthAnchor constraintEqualToConstant:chipWidth],
+                [marqueeChip.widthAnchor constraintEqualToConstant:chipWidth]
+            ]];
+
+            [self.view layoutIfNeeded];
+            CGFloat labelWidth = [scrollingLabel sizeThatFits:CGSizeMake(CGFLOAT_MAX, 16)].width;
+            if (labelWidth <= marqueeWidth)
+            {
+                marqueeChip.hidden         = YES;
+                titleChip.hidden           = NO;
+                titleCenterC.active        = YES;
+                titleLeadingC.active       = NO;
+                titleLabel.textAlignment   = NSTextAlignmentCenter;
+                titleMarquee.contentOffset = CGPointZero;
+            }
+            else
+            {
+                titleChip.hidden             = YES;
+                marqueeChip.hidden           = NO;
+                titleCenterC.active          = NO;
+                titleLeadingC.active         = YES;
+                scrollingLabel.textAlignment = NSTextAlignmentLeft;
+                [ChronosMarquee startContinuousMarqueeIn:titleMarquee
+                                             contentView:scrollingLabel
+                                            contentWidth:labelWidth
+                                           viewportWidth:marqueeWidth
+                                                     gap:24.0];
+            }
+        });
     }
 }
 
