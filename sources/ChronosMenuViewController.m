@@ -35,7 +35,6 @@ extern double          totalBookDuration;
 @property (nonatomic, strong) UILabel                 *booksCountLabel;
 @property (nonatomic, strong) UILabel                 *followersCountLabel;
 @property (nonatomic, strong) UIActivityIndicatorView *hardcoverSpinner;
-@property (nonatomic, strong) UIActivityIndicatorView *profileRefreshSpinner;
 @property (nonatomic, strong) UIView                  *currentlyReadingContainer;
 @property (nonatomic, strong) UIScrollView            *currentlyReadingScroll;
 @property (nonatomic, strong) UIStackView             *currentlyReadingStack;
@@ -44,6 +43,8 @@ extern double          totalBookDuration;
 @property (nonatomic, strong) UIView                  *chapterChip;
 @property (nonatomic, strong) UIView                  *progressChip;
 @property (nonatomic, strong) UIStackView             *detailsRow;
+@property (nonatomic, strong) HardcoverUser           *currentlyDisplayedUser;
+@property (nonatomic, strong) NSDictionary            *currentlyDisplayedAudibleData;
 @end
 
 @implementation ChronosMenuViewController
@@ -742,13 +743,6 @@ extern double          totalBookDuration;
     [profileView addSubview:nameStack];
     [profileView addSubview:self.userStatsStack];
 
-    self.profileRefreshSpinner = [[UIActivityIndicatorView alloc]
-        initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-    self.profileRefreshSpinner.translatesAutoresizingMaskIntoConstraints = NO;
-    self.profileRefreshSpinner.hidesWhenStopped                          = YES;
-    self.profileRefreshSpinner.hidden                                    = YES;
-    [profileView addSubview:self.profileRefreshSpinner];
-
     [NSLayoutConstraint activateConstraints:@[
         [self.userAvatarView.leadingAnchor constraintEqualToAnchor:profileView.leadingAnchor
                                                           constant:12],
@@ -763,14 +757,8 @@ extern double          totalBookDuration;
             constraintGreaterThanOrEqualToAnchor:nameStack.trailingAnchor
                                         constant:12],
         [self.userStatsStack.centerYAnchor constraintEqualToAnchor:profileView.centerYAnchor],
-        [self.userStatsStack.trailingAnchor
-            constraintLessThanOrEqualToAnchor:self.profileRefreshSpinner.leadingAnchor
-                                     constant:-8],
-        [self.profileRefreshSpinner.centerYAnchor
-            constraintEqualToAnchor:profileView.centerYAnchor],
-        [self.profileRefreshSpinner.trailingAnchor
-            constraintEqualToAnchor:profileView.trailingAnchor
-                           constant:-12]
+        [self.userStatsStack.trailingAnchor constraintEqualToAnchor:profileView.trailingAnchor
+                                                           constant:-12]
     ]];
 
     UITapGestureRecognizer *tapGesture =
@@ -782,6 +770,27 @@ extern double          totalBookDuration;
 }
 
 - (void)loadData
+{
+    // Load cached data immediately if available
+    NSDictionary *cachedData = [self loadCachedAudibleData];
+    if (cachedData)
+    {
+        [self updateAudibleUIWithData:cachedData animated:NO];
+    }
+    else
+    {
+        // Show spinner only if no cached data
+        [self.spinner startAnimating];
+        self.spinner.hidden = NO;
+        UIView *stack       = [self.view viewWithTag:101];
+        stack.hidden        = YES;
+    }
+
+    // Always refresh data in background
+    [self refreshAudibleData];
+}
+
+- (void)refreshAudibleData
 {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         [NSThread sleepForTimeInterval:0.7];
@@ -833,30 +842,81 @@ extern double          totalBookDuration;
         extern NSString *currentContentID;
         NSString        *asin      = currentASIN ?: info[@"asin"] ?: @"";
         NSString        *contentId = currentContentID ?: info[@"contentId"] ?: @"";
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self.spinner stopAnimating];
-            self.spinner.hidden     = YES;
-            UIView *stack           = [self.view viewWithTag:101];
-            stack.hidden            = NO;
-            self.titleLabel.text    = bookTitle.length ? bookTitle : @"(No Book Title)";
-            self.authorLabel.text   = author;
-            self.chapterLabel.text  = chapterTitle;
-            self.progressLabel.text = progressStr;
 
-            self.authorChip.hidden   = (self.authorLabel.text.length == 0);
-            self.chapterChip.hidden  = (self.chapterLabel.text.length == 0);
-            self.progressChip.hidden = (totalBookDuration <= 0.0);
-            self.asinLabel.text      = asin.length ? asin : @"(no ASIN)";
-            self.contentIdLabel.text = contentId.length ? contentId : @"(no Content ID)";
-            [self.asinCopyButton addTarget:self
-                                    action:@selector(copyASIN)
-                          forControlEvents:UIControlEventTouchUpInside];
-            [self.contentIdCopyButton addTarget:self
-                                         action:@selector(copyContentId)
-                               forControlEvents:UIControlEventTouchUpInside];
-            [self configureSheetPresentation];
+        // Create new data dictionary
+        NSDictionary *newData = @{
+            @"bookTitle" : bookTitle.length ? bookTitle : @"(No Book Title)",
+            @"author" : author ?: @"",
+            @"chapterTitle" : chapterTitle ?: @"",
+            @"progressStr" : progressStr,
+            @"asin" : asin.length ? asin : @"(no ASIN)",
+            @"contentId" : contentId.length ? contentId : @"(no Content ID)",
+            @"totalBookDuration" : @(totalBookDuration)
+        };
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            // Compare with currently displayed data
+            BOOL dataChanged = ![self isAudibleDataEqual:self.currentlyDisplayedAudibleData
+                                                      to:newData];
+
+            if (dataChanged || !self.currentlyDisplayedAudibleData)
+            {
+                [self updateAudibleUIWithData:newData
+                                     animated:(self.currentlyDisplayedAudibleData != nil)];
+                [self saveCachedAudibleData:newData];
+            }
         });
     });
+}
+
+- (void)updateAudibleUIWithData:(NSDictionary *)data animated:(BOOL)animated
+{
+    if (!data)
+        return;
+
+    // Store the new data as currently displayed
+    self.currentlyDisplayedAudibleData = [data copy];
+
+    void (^updateBlock)(void) = ^{
+        [self.spinner stopAnimating];
+        self.spinner.hidden = YES;
+        UIView *stack       = [self.view viewWithTag:101];
+        stack.hidden        = NO;
+
+        self.titleLabel.text    = data[@"bookTitle"];
+        self.authorLabel.text   = data[@"author"];
+        self.chapterLabel.text  = data[@"chapterTitle"];
+        self.progressLabel.text = data[@"progressStr"];
+
+        double totalBookDuration = [data[@"totalBookDuration"] doubleValue];
+        self.authorChip.hidden   = (((NSString *) data[@"author"]).length == 0);
+        self.chapterChip.hidden  = (((NSString *) data[@"chapterTitle"]).length == 0);
+        self.progressChip.hidden = (totalBookDuration <= 0.0);
+
+        self.asinLabel.text      = data[@"asin"];
+        self.contentIdLabel.text = data[@"contentId"];
+
+        [self.asinCopyButton addTarget:self
+                                action:@selector(copyASIN)
+                      forControlEvents:UIControlEventTouchUpInside];
+        [self.contentIdCopyButton addTarget:self
+                                     action:@selector(copyContentId)
+                           forControlEvents:UIControlEventTouchUpInside];
+    };
+
+    if (animated)
+    {
+        [UIView transitionWithView:self.view
+                          duration:0.3
+                           options:UIViewAnimationOptionTransitionCrossDissolve
+                        animations:updateBlock
+                        completion:^(BOOL finished) { [self configureSheetPresentation]; }];
+    }
+    else
+    {
+        updateBlock();
+        [self configureSheetPresentation];
+    }
 }
 
 - (NSString *)formatTime:(double)seconds
@@ -930,7 +990,14 @@ extern double          totalBookDuration;
         HardcoverUser *cached = [self loadCachedHardcoverUser];
         if (cached)
         {
+            self.currentlyDisplayedUser =
+                [self copyUser:cached]; // Track the cached user (store a copy)
             [self updateHardcoverUI:cached];
+            // Render cached currently reading data immediately
+            if (self.currentlyReadingItems)
+            {
+                [self renderCurrentlyReading];
+            }
         }
         else
         {
@@ -940,15 +1007,11 @@ extern double          totalBookDuration;
             self.userNameLabel.text     = @"Loading…";
             self.userAvatarView.image   = [UIImage systemImageNamed:@"person.circle.fill"];
         }
-        if (self.profileRefreshSpinner)
-        {
-            self.profileRefreshSpinner.hidden = NO;
-            [self.profileRefreshSpinner startAnimating];
-        }
+
+        // Always refresh in the background
         [self refreshHardcoverAuth];
     }
 }
-
 - (void)refreshHardcoverAuth
 {
     HardcoverAPI *api = [HardcoverAPI sharedInstance];
@@ -958,16 +1021,20 @@ extern double          totalBookDuration;
     [api refreshUserWithCompletion:^(BOOL success, HardcoverUser *user, NSError *error) {
         if (success && user)
         {
-            [self updateHardcoverUI:user];
+            // Only update UI if the user data has actually changed
+            if (![self isUser:self.currentlyDisplayedUser equalToUser:user])
+            {
+                [self updateHardcoverUI:user];
+            }
+            else
+            {
+                // Even if user data hasn't changed, still refresh currently reading data
+                [self loadCurrentlyReadingForUser:user];
+            }
         }
         else
         {
             [self showHardcoverLoginUI];
-        }
-        if (self.profileRefreshSpinner)
-        {
-            [self.profileRefreshSpinner stopAnimating];
-            self.profileRefreshSpinner.hidden = YES;
         }
     }];
 }
@@ -1025,7 +1092,9 @@ extern double          totalBookDuration;
 
     NSInteger books = user.books_count ? user.books_count.integerValue : 0;
 
+    // Always refresh currently reading data in the background
     [self loadCurrentlyReadingForUser:user];
+
     NSInteger followers           = user.followers_count ? user.followers_count.integerValue : 0;
     self.booksCountLabel.text     = [NSString stringWithFormat:@"%ld", (long) books];
     self.followersCountLabel.text = [NSString stringWithFormat:@"%ld", (long) followers];
@@ -1069,8 +1138,10 @@ extern double          totalBookDuration;
     }
     self.librarianBadge.hidden = !isLibrarian;
 
-    [self saveCachedHardcoverUser:user];
+    // Track the currently displayed user (store a copy to avoid reference issues)
+    self.currentlyDisplayedUser = [self copyUser:user];
 
+    [self saveCachedHardcoverUser:user];
     [UIView
         animateWithDuration:0.3
                  animations:^{
@@ -1111,11 +1182,6 @@ extern double          totalBookDuration;
                      self.apiTokenField.hidden   = NO;
                      self.authorizeButton.hidden = NO;
                      self.userProfileView.hidden = YES;
-                     if (self.profileRefreshSpinner)
-                     {
-                         [self.profileRefreshSpinner stopAnimating];
-                         self.profileRefreshSpinner.hidden = YES;
-                     }
 
                      NSLayoutConstraint *bottomConstraint = nil;
                      for (NSLayoutConstraint *constraint in self.hardcoverSection.constraints)
@@ -1146,6 +1212,9 @@ extern double          totalBookDuration;
         return;
     }
     __weak typeof(self) weakSelf = self;
+    NSArray *previousItems       = self.currentlyReadingItems ? [self.currentlyReadingItems copy]
+                                                              : nil; // Store a copy for comparison
+
     [[HardcoverAPI sharedInstance]
         fetchCurrentlyReadingForUserId:user.userId
                             completion:^(NSArray *items, NSError *error) {
@@ -1153,8 +1222,22 @@ extern double          totalBookDuration;
                                 {
                                     return;
                                 }
-                                weakSelf.currentlyReadingItems = items;
-                                [weakSelf renderCurrentlyReading];
+
+                                // Only update UI if the currently reading data has changed
+                                if (![weakSelf isCurrentlyReadingEqual:previousItems to:items])
+                                {
+                                    weakSelf.currentlyReadingItems = items;
+                                    [weakSelf renderCurrentlyReading];
+                                }
+                                else
+                                {
+                                    // Update the internal data but don't re-render
+                                    weakSelf.currentlyReadingItems = items;
+                                }
+
+                                // Cache the updated currently reading data
+                                [weakSelf saveCachedHardcoverUser:user
+                                        withCurrentlyReadingItems:items];
                             }];
 }
 
@@ -1494,9 +1577,91 @@ extern double          totalBookDuration;
     [controller dismissViewControllerAnimated:YES completion:nil];
 }
 
+#pragma mark - Hardcover data comparison helpers
+
+- (HardcoverUser *)copyUser:(HardcoverUser *)user
+{
+    if (!user)
+        return nil;
+
+    HardcoverUser *copy  = [[HardcoverUser alloc] init];
+    copy.userId          = user.userId;
+    copy.username        = user.username;
+    copy.name            = user.name;
+    copy.imageURL        = user.imageURL;
+    copy.books_count     = user.books_count;
+    copy.followers_count = user.followers_count;
+    copy.librarian_roles = user.librarian_roles ? [user.librarian_roles copy] : nil;
+    return copy;
+}
+
+- (BOOL)isUser:(HardcoverUser *)user1 equalToUser:(HardcoverUser *)user2
+{
+    if (!user1 && !user2)
+        return YES;
+    if (!user1 || !user2)
+        return NO;
+
+    return ([self isEqual:user1.userId to:user2.userId] &&
+            [self isEqual:user1.username to:user2.username] &&
+            [self isEqual:user1.name to:user2.name] &&
+            [self isEqual:user1.imageURL to:user2.imageURL] &&
+            [self isEqual:user1.books_count to:user2.books_count] &&
+            [self isEqual:user1.followers_count to:user2.followers_count] &&
+            [self isArrayEqual:user1.librarian_roles to:user2.librarian_roles]);
+}
+
+- (BOOL)isCurrentlyReadingEqual:(NSArray *)items1 to:(NSArray *)items2
+{
+    if (!items1 && !items2)
+        return YES;
+    if (!items1 || !items2)
+        return NO;
+    if (items1.count != items2.count)
+        return NO;
+
+    for (NSInteger i = 0; i < items1.count; i++)
+    {
+        NSDictionary *item1 = items1[i];
+        NSDictionary *item2 = items2[i];
+
+        if (![self isEqual:item1[@"title"] to:item2[@"title"]] ||
+            ![self isEqual:item1[@"coverURL"] to:item2[@"coverURL"]] ||
+            ![self isArrayEqual:item1[@"asins"] to:item2[@"asins"]])
+        {
+            return NO;
+        }
+    }
+    return YES;
+}
+
+- (BOOL)isEqual:(id)obj1 to:(id)obj2
+{
+    if (!obj1 && !obj2)
+        return YES;
+    if (!obj1 || !obj2)
+        return NO;
+    return [obj1 isEqual:obj2];
+}
+
+- (BOOL)isArrayEqual:(NSArray *)arr1 to:(NSArray *)arr2
+{
+    if (!arr1 && !arr2)
+        return YES;
+    if (!arr1 || !arr2)
+        return NO;
+    return [arr1 isEqualToArray:arr2];
+}
+
 #pragma mark - Hardcover cache helpers
 
 - (void)saveCachedHardcoverUser:(HardcoverUser *)user
+{
+    [self saveCachedHardcoverUser:user withCurrentlyReadingItems:nil];
+}
+
+- (void)saveCachedHardcoverUser:(HardcoverUser *)user
+      withCurrentlyReadingItems:(NSArray *)currentlyReadingItems
 {
     if (!user)
         return;
@@ -1515,6 +1680,16 @@ extern double          totalBookDuration;
         dict[@"followers_count"] = user.followers_count;
     if (user.librarian_roles)
         dict[@"librarian_roles"] = user.librarian_roles;
+
+    // Cache currently reading items if provided
+    if (currentlyReadingItems)
+        dict[@"currentlyReadingItems"] = currentlyReadingItems;
+    else if (self.currentlyReadingItems)
+        dict[@"currentlyReadingItems"] = self.currentlyReadingItems;
+
+    // Add timestamp for cache expiry
+    dict[@"cachedAt"] = @([[NSDate date] timeIntervalSince1970]);
+
     [[NSUserDefaults standardUserDefaults] setObject:dict forKey:@"HardcoverCachedUser"];
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
@@ -1534,6 +1709,58 @@ extern double          totalBookDuration;
     user.followers_count = dict[@"followers_count"];
     if ([dict[@"librarian_roles"] isKindOfClass:[NSArray class]])
         user.librarian_roles = dict[@"librarian_roles"];
+
+    // Load cached currently reading items
+    if ([dict[@"currentlyReadingItems"] isKindOfClass:[NSArray class]])
+        self.currentlyReadingItems = dict[@"currentlyReadingItems"];
+
     return user;
 }
+
+#pragma mark - Audible cache helpers
+
+- (void)saveCachedAudibleData:(NSDictionary *)audibleData
+{
+    if (!audibleData)
+        return;
+
+    NSMutableDictionary *cacheDict = [audibleData mutableCopy];
+    // Add timestamp for cache expiry
+    cacheDict[@"cachedAt"] = @([[NSDate date] timeIntervalSince1970]);
+
+    [[NSUserDefaults standardUserDefaults] setObject:cacheDict forKey:@"ChronosCachedAudibleData"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+- (NSDictionary *)loadCachedAudibleData
+{
+    NSDictionary *dict =
+        [[NSUserDefaults standardUserDefaults] objectForKey:@"ChronosCachedAudibleData"];
+    if (![dict isKindOfClass:[NSDictionary class]])
+        return nil;
+
+    return dict;
+}
+
+- (BOOL)isAudibleDataEqual:(NSDictionary *)data1 to:(NSDictionary *)data2
+{
+    if (!data1 && !data2)
+        return YES;
+    if (!data1 || !data2)
+        return NO;
+
+    NSArray *keysToCompare =
+        @[ @"bookTitle", @"author", @"chapterTitle", @"progressStr", @"asin", @"contentId" ];
+
+    for (NSString *key in keysToCompare)
+    {
+        if (![self isEqual:data1[key] to:data2[key]])
+        {
+            return NO;
+        }
+    }
+
+    return YES;
+}
+
 @end
