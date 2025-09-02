@@ -9,29 +9,6 @@ extern double          totalBookDuration;
 }
 #endif
 
-static void Chronos_StartMarquee(UIScrollView *marquee, CGFloat labelWidth, CGFloat marqueeWidth)
-{
-    if (!marquee)
-        return;
-    marquee.contentOffset   = CGPointZero;
-    CGFloat        distance = MAX(0, labelWidth - marqueeWidth);
-    NSTimeInterval duration = MAX(3.0, MIN(10.0, distance / 20.0));
-    [UIView animateWithDuration:duration
-        delay:0
-        options:UIViewAnimationOptionCurveLinear
-        animations:^{ marquee.contentOffset = CGPointMake(distance, 0); }
-        completion:^(BOOL finished) {
-            if (!finished)
-                return;
-            marquee.contentOffset = CGPointZero;
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t) (0.5 * NSEC_PER_SEC)),
-                           dispatch_get_main_queue(), ^{
-                               if (marquee.window)
-                                   Chronos_StartMarquee(marquee, labelWidth, marqueeWidth);
-                           });
-        }];
-}
-
 @interface ChronosMenuViewController () <SFSafariViewControllerDelegate>
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) UILabel                 *titleLabel;
@@ -601,10 +578,8 @@ static void Chronos_StartMarquee(UIScrollView *marquee, CGFloat labelWidth, CGFl
         [self.currentlyReadingStack.trailingAnchor
             constraintEqualToAnchor:self.currentlyReadingScroll.contentLayoutGuide.trailingAnchor
                            constant:-12],
-        // Make content height equal to visible height so it doesn't vertically scroll
         [self.currentlyReadingScroll.contentLayoutGuide.heightAnchor
             constraintEqualToAnchor:self.currentlyReadingScroll.frameLayoutGuide.heightAnchor],
-        // Center the horizontal stack vertically with equal min insets
         [self.currentlyReadingStack.centerYAnchor
             constraintEqualToAnchor:self.currentlyReadingScroll.contentLayoutGuide.centerYAnchor],
         [self.currentlyReadingStack.topAnchor
@@ -1242,30 +1217,7 @@ static void Chronos_StartMarquee(UIScrollView *marquee, CGFloat labelWidth, CGFl
         }
         if (matchesASIN || matchesContent)
         {
-            // Subtle green border + glow to indicate selected sync item
-            pill.layer.borderColor  = UIColor.systemGreenColor.CGColor;
-            pill.layer.shadowColor  = UIColor.systemGreenColor.CGColor;
-            pill.layer.shadowRadius = 8.0;
-            pill.layer.shadowOffset = CGSizeZero;
-            // Animate a very subtle breathing glow
-            CABasicAnimation *glow = [CABasicAnimation animationWithKeyPath:@"shadowOpacity"];
-            glow.fromValue         = @(0.0);
-            glow.toValue           = @(0.25);
-            glow.duration          = 1.2;
-            glow.autoreverses      = YES;
-            glow.repeatCount       = HUGE_VALF;
-            // Also animate border width slightly for a light saber-y shimmer
-            CABasicAnimation *border = [CABasicAnimation animationWithKeyPath:@"borderWidth"];
-            border.fromValue         = @(1.0);
-            border.toValue           = @(1.8);
-            border.duration          = 1.2;
-            border.autoreverses      = YES;
-            border.repeatCount       = HUGE_VALF;
-            // Apply base values and start animations
-            pill.layer.shadowOpacity = 0.25;
-            pill.layer.borderWidth   = 1.0;
-            [pill.layer addAnimation:glow forKey:@"chronosGlowOpacity"];
-            [pill.layer addAnimation:border forKey:@"chronosBorderPulse"];
+            [ChronosEffects applySubtleGreenGlowToLayer:pill.layer];
         }
 
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t) (0.1 * NSEC_PER_SEC)),
@@ -1289,7 +1241,11 @@ static void Chronos_StartMarquee(UIScrollView *marquee, CGFloat labelWidth, CGFl
                                titleCenterC.active      = NO;
                                titleLeadingC.active     = YES;
                                titleLabel.textAlignment = NSTextAlignmentLeft;
-                               Chronos_StartMarquee(titleMarquee, labelWidth, marqueeWidth);
+                               [ChronosMarquee startContinuousMarqueeIn:titleMarquee
+                                                            contentView:titleLabel
+                                                           contentWidth:labelWidth
+                                                          viewportWidth:marqueeWidth
+                                                                    gap:24.0];
                            }
                        });
     }

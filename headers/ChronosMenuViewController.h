@@ -3,6 +3,8 @@
 #import <MediaPlayer/MediaPlayer.h>
 #import <SafariServices/SafariServices.h>
 
+#import "ChronosEffects.h"
+#import "ChronosMarquee.h"
 #import "HardcoverAPI.h"
 
 @interface ChronosMenuViewController : UIViewController
