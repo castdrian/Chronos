@@ -13,7 +13,6 @@
     if (contentWidth <= viewportWidth)
         return;
 
-    // Ensure layout is up-to-date to avoid any initial jump/flicker
     [scrollView layoutIfNeeded];
 
     UIView *duplicate = [scrollView viewWithTag:9991];
@@ -66,14 +65,11 @@
     }
 
     CGFloat loopDistance = contentWidth + gap;
-    // Moderate speed (about ~40 px/s), capped; start remains immediate
     NSTimeInterval duration = MAX(2.0, MIN(10.0, loopDistance / 40.0));
-    // Clear any prior animations and reset offset synchronously to avoid flicker
     [scrollView.layer removeAllAnimations];
     scrollView.contentOffset = CGPointZero;
     if (!scrollView.window)
     {
-        // If not yet in a window, schedule shortly after to ensure we have a render pass
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t) (0.05 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
                            if (scrollView.window)
@@ -88,7 +84,6 @@
     [self _runMarqueeOn:scrollView loopDistance:loopDistance duration:duration];
 }
 
-// Private helper to loop the marquee without self-referential block capture
 + (void)_runMarqueeOn:(UIScrollView *)scrollView
          loopDistance:(CGFloat)loopDistance
              duration:(NSTimeInterval)duration
