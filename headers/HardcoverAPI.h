@@ -37,7 +37,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (nullable NSString *)loadSavedToken;
 - (void)clearToken;
 
-// Progress updates (audio seconds)
 - (void)updateListeningProgressForASIN:(nonnull NSString *)asin
 								progressSeconds:(NSInteger)seconds
 									totalSeconds:(NSInteger)totalSeconds

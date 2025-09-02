@@ -771,7 +771,6 @@ extern double          totalBookDuration;
 
 - (void)loadData
 {
-    // Load cached data immediately if available
     NSDictionary *cachedData = [self loadCachedAudibleData];
     if (cachedData)
     {
@@ -779,14 +778,12 @@ extern double          totalBookDuration;
     }
     else
     {
-        // Show spinner only if no cached data
         [self.spinner startAnimating];
         self.spinner.hidden = NO;
         UIView *stack       = [self.view viewWithTag:101];
         stack.hidden        = YES;
     }
 
-    // Always refresh data in background
     [self refreshAudibleData];
 }
 
@@ -843,7 +840,6 @@ extern double          totalBookDuration;
         NSString        *asin      = currentASIN ?: info[@"asin"] ?: @"";
         NSString        *contentId = currentContentID ?: info[@"contentId"] ?: @"";
 
-        // Create new data dictionary
         NSDictionary *newData = @{
             @"bookTitle" : bookTitle.length ? bookTitle : @"(No Book Title)",
             @"author" : author ?: @"",
@@ -855,7 +851,6 @@ extern double          totalBookDuration;
         };
 
         dispatch_async(dispatch_get_main_queue(), ^{
-            // Compare with currently displayed data
             BOOL dataChanged = ![self isAudibleDataEqual:self.currentlyDisplayedAudibleData
                                                       to:newData];
 
@@ -874,7 +869,6 @@ extern double          totalBookDuration;
     if (!data)
         return;
 
-    // Store the new data as currently displayed
     self.currentlyDisplayedAudibleData = [data copy];
 
     void (^updateBlock)(void) = ^{
@@ -991,9 +985,8 @@ extern double          totalBookDuration;
         if (cached)
         {
             self.currentlyDisplayedUser =
-                [self copyUser:cached]; // Track the cached user (store a copy)
+                [self copyUser:cached];
             [self updateHardcoverUI:cached];
-            // Render cached currently reading data immediately
             if (self.currentlyReadingItems)
             {
                 [self renderCurrentlyReading];
@@ -1008,7 +1001,6 @@ extern double          totalBookDuration;
             self.userAvatarView.image   = [UIImage systemImageNamed:@"person.circle.fill"];
         }
 
-        // Always refresh in the background
         [self refreshHardcoverAuth];
     }
 }
@@ -1021,14 +1013,12 @@ extern double          totalBookDuration;
     [api refreshUserWithCompletion:^(BOOL success, HardcoverUser *user, NSError *error) {
         if (success && user)
         {
-            // Only update UI if the user data has actually changed
             if (![self isUser:self.currentlyDisplayedUser equalToUser:user])
             {
                 [self updateHardcoverUI:user];
             }
             else
             {
-                // Even if user data hasn't changed, still refresh currently reading data
                 [self loadCurrentlyReadingForUser:user];
             }
         }
@@ -1092,7 +1082,6 @@ extern double          totalBookDuration;
 
     NSInteger books = user.books_count ? user.books_count.integerValue : 0;
 
-    // Always refresh currently reading data in the background
     [self loadCurrentlyReadingForUser:user];
 
     NSInteger followers           = user.followers_count ? user.followers_count.integerValue : 0;
@@ -1138,7 +1127,6 @@ extern double          totalBookDuration;
     }
     self.librarianBadge.hidden = !isLibrarian;
 
-    // Track the currently displayed user (store a copy to avoid reference issues)
     self.currentlyDisplayedUser = [self copyUser:user];
 
     [self saveCachedHardcoverUser:user];
@@ -1213,7 +1201,7 @@ extern double          totalBookDuration;
     }
     __weak typeof(self) weakSelf = self;
     NSArray *previousItems       = self.currentlyReadingItems ? [self.currentlyReadingItems copy]
-                                                              : nil; // Store a copy for comparison
+                                                              : nil;
 
     [[HardcoverAPI sharedInstance]
         fetchCurrentlyReadingForUserId:user.userId
@@ -1223,7 +1211,6 @@ extern double          totalBookDuration;
                                     return;
                                 }
 
-                                // Only update UI if the currently reading data has changed
                                 if (![weakSelf isCurrentlyReadingEqual:previousItems to:items])
                                 {
                                     weakSelf.currentlyReadingItems = items;
@@ -1231,11 +1218,9 @@ extern double          totalBookDuration;
                                 }
                                 else
                                 {
-                                    // Update the internal data but don't re-render
                                     weakSelf.currentlyReadingItems = items;
                                 }
 
-                                // Cache the updated currently reading data
                                 [weakSelf saveCachedHardcoverUser:user
                                         withCurrentlyReadingItems:items];
                             }];
@@ -1681,13 +1666,11 @@ extern double          totalBookDuration;
     if (user.librarian_roles)
         dict[@"librarian_roles"] = user.librarian_roles;
 
-    // Cache currently reading items if provided
     if (currentlyReadingItems)
         dict[@"currentlyReadingItems"] = currentlyReadingItems;
     else if (self.currentlyReadingItems)
         dict[@"currentlyReadingItems"] = self.currentlyReadingItems;
 
-    // Add timestamp for cache expiry
     dict[@"cachedAt"] = @([[NSDate date] timeIntervalSince1970]);
 
     [[NSUserDefaults standardUserDefaults] setObject:dict forKey:@"HardcoverCachedUser"];
@@ -1710,7 +1693,6 @@ extern double          totalBookDuration;
     if ([dict[@"librarian_roles"] isKindOfClass:[NSArray class]])
         user.librarian_roles = dict[@"librarian_roles"];
 
-    // Load cached currently reading items
     if ([dict[@"currentlyReadingItems"] isKindOfClass:[NSArray class]])
         self.currentlyReadingItems = dict[@"currentlyReadingItems"];
 
@@ -1725,7 +1707,6 @@ extern double          totalBookDuration;
         return;
 
     NSMutableDictionary *cacheDict = [audibleData mutableCopy];
-    // Add timestamp for cache expiry
     cacheDict[@"cachedAt"] = @([[NSDate date] timeIntervalSince1970]);
 
     [[NSUserDefaults standardUserDefaults] setObject:cacheDict forKey:@"ChronosCachedAudibleData"];
