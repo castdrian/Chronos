@@ -1290,7 +1290,7 @@ extern double          totalBookDuration;
         pill.layer.borderColor                          = UIColor.systemGray3Color.CGColor;
         UIImageView *cover                              = [[UIImageView alloc] init];
         cover.translatesAutoresizingMaskIntoConstraints = NO;
-        cover.contentMode                               = UIViewContentModeScaleAspectFit;
+        cover.contentMode                               = UIViewContentModeScaleAspectFill;
         cover.backgroundColor                           = UIColor.secondarySystemBackgroundColor;
         cover.layer.masksToBounds                       = YES;
         cover.alpha                                     = 0.9;
