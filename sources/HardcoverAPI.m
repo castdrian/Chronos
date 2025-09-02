@@ -1,5 +1,10 @@
 #import "HardcoverAPI.h"
 
+@interface HardcoverAPI ()
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *>
+    *asinToIDs;
+@end
+
 @implementation HardcoverUser
 @end
 
@@ -21,6 +26,7 @@
         _apiToken     = [self loadSavedToken];
         _isAuthorized = NO;
         _currentUser  = nil;
+        _asinToIDs    = [NSMutableDictionary dictionary];
     }
     return self;
 }
@@ -167,10 +173,12 @@
     NSString *query = [NSString
         stringWithFormat:
             @"query CurrentlyReading {\n  users(where: {id: {_eq: %ld}}, limit: 1) {\n    id\n    "
-            @"username\n    user_books(where: {status_id: {_eq: 2}}) {\n      user_book_reads {\n  "
-            @"      user_book {\n          book {\n            id\n            title\n            "
+            @"username\n    user_books(where: {status_id: {_eq: 2}}) {\n      id\n      "
+            @"user_book_reads {\n  "
+            @"        user_book {\n          book {\n            id\n            title\n           "
+            @" "
             @"image { url }\n  "
-            @"        }\n        }\n        edition { id asin audio_seconds }\n        "
+            @"          }\n        }\n        edition { id asin audio_seconds }\n        "
             @"progress_seconds\n      }\n    }\n  }\n}",
             (long) userId.longLongValue];
 
@@ -193,12 +201,16 @@
                   NSDictionary *user = users.firstObject;
                   NSArray      *user_books =
                       ([user isKindOfClass:[NSDictionary class]] ? user[@"user_books"] : nil);
+                  [self.asinToIDs removeAllObjects];
+
                   NSMutableDictionary *itemsByBookId = [NSMutableDictionary dictionary];
                   NSMutableArray      *ordered       = [NSMutableArray array];
                   for (id ub in user_books)
                   {
                       if (![ub isKindOfClass:[NSDictionary class]])
                           continue;
+                      NSNumber *userBookId =
+                          [ub[@"id"] isKindOfClass:[NSNumber class]] ? ub[@"id"] : nil;
                       NSArray *reads = ((NSDictionary *) ub)[@"user_book_reads"];
                       if (![reads isKindOfClass:[NSArray class]])
                           continue;
@@ -240,6 +252,9 @@
                               [coverVal isKindOfClass:[NSString class]] ? coverVal : @"";
                           id        asinVal = edition[@"asin"];
                           NSString *asin = [asinVal isKindOfClass:[NSString class]] ? asinVal : @"";
+                          NSNumber *editionId = [edition[@"id"] isKindOfClass:[NSNumber class]]
+                                                    ? edition[@"id"]
+                                                    : nil;
 
                           if (!bookId)
                               continue;
@@ -261,11 +276,20 @@
                           {
                               NSMutableSet *asins = entry[@"asins"];
                               [asins addObject:asin];
+                              if (userBookId && editionId)
+                              {
+                                  self.asinToIDs[asin] =
+                                      @{@"user_book_id" : userBookId, @"edition_id" : editionId};
+                              }
                           }
                           if (audioSeconds)
                               entry[@"audio_seconds"] = audioSeconds;
                           if (progressSeconds)
                               entry[@"progress_seconds"] = progressSeconds;
+                          if (userBookId)
+                              entry[@"user_book_id"] = userBookId;
+                          if (editionId)
+                              entry[@"edition_id"] = editionId;
                       }
                   }
                   for (NSMutableDictionary *entry in ordered)
@@ -277,6 +301,241 @@
                   if (completion)
                       completion(ordered, nil);
               }];
+}
+
+#pragma mark - Progress Updates
+
+- (void)updateListeningProgressForASIN:(NSString *)asin
+                       progressSeconds:(NSInteger)seconds
+                          totalSeconds:(NSInteger)totalSeconds
+                            completion:(void (^_Nullable)(BOOL success,
+                                                          NSError *_Nullable error))completion
+{
+    if (!self.apiToken || self.apiToken.length == 0 || !self.currentUser.userId || asin.length == 0)
+    {
+        if (completion)
+            completion(
+                NO, [NSError errorWithDomain:@"HardcoverAPI"
+                                        code:400
+                                    userInfo:@{
+                                        NSLocalizedDescriptionKey : @"Missing token, user, or ASIN"
+                                    }]);
+        return;
+    }
+    NSDictionary *ids = self.asinToIDs[asin];
+    NSNumber     *cachedUserBookId =
+        [ids[@"user_book_id"] isKindOfClass:[NSNumber class]] ? ids[@"user_book_id"] : nil;
+    NSNumber *cachedEditionId =
+        [ids[@"edition_id"] isKindOfClass:[NSNumber class]] ? ids[@"edition_id"] : nil;
+
+    __weak typeof(self) weakSelf                                     = self;
+    void (^performUpdate)(NSNumber *userBookId, NSNumber *editionId) = ^(NSNumber *userBookId,
+                                                                         NSNumber *editionId) {
+        if (!userBookId || !editionId)
+        {
+            if (completion)
+            {
+                completion(NO, [NSError errorWithDomain:@"HardcoverAPI"
+                                                   code:404
+                                               userInfo:@{
+                                                   NSLocalizedDescriptionKey :
+                                                       @"Missing user_book_id or edition_id"
+                                               }]);
+            }
+            return;
+        }
+
+        NSString *latestReadQuery = [NSString
+            stringWithFormat:@"query LatestRead { user_book_reads(where: {user_book_id: {_eq: "
+                             @"%ld}}, order_by: {created_at: desc}, limit: 1) { id edition_id } }",
+                             (long) userBookId.longLongValue];
+
+        [weakSelf
+            makeGraphQLRequest:latestReadQuery
+                withCompletion:^(NSDictionary *resp, NSError *err) {
+                    if (err)
+                    {
+                        if (completion)
+                            completion(NO, err);
+                        return;
+                    }
+                    NSDictionary *data =
+                        [resp isKindOfClass:[NSDictionary class]] ? resp[@"data"] : nil;
+                    NSArray *reads =
+                        [data isKindOfClass:[NSDictionary class]] ? data[@"user_book_reads"] : nil;
+                    NSDictionary *latest =
+                        ([reads isKindOfClass:[NSArray class]] && reads.count > 0)
+                            ? reads.firstObject
+                            : nil;
+                    NSNumber *readId =
+                        [latest[@"id"] isKindOfClass:[NSNumber class]] ? latest[@"id"] : nil;
+                    NSNumber *existingEditionId =
+                        [latest[@"edition_id"] isKindOfClass:[NSNumber class]]
+                            ? latest[@"edition_id"]
+                            : nil;
+                    NSNumber *useEditionId = cachedEditionId ?: existingEditionId ?: editionId;
+
+                    if (readId)
+                    {
+                        NSString *mutation = [NSString
+                            stringWithFormat:
+                                @"mutation UpdateBookProgress { update_user_book_read(id: %ld, "
+                                @"object: { progress_seconds: %ld, edition_id: %ld }) { error "
+                                @"user_book_read { id progress_seconds edition_id started_at } } }",
+                                (long) readId.longLongValue, (long) seconds,
+                                (long) useEditionId.longLongValue];
+                        [weakSelf makeGraphQLRequest:mutation
+                                      withCompletion:^(NSDictionary *respU, NSError *errU) {
+                                          if (completion)
+                                              completion(errU == nil, errU);
+                                      }];
+                    }
+                    else
+                    {
+                        NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
+                        fmt.dateFormat       = @"yyyy-MM-dd";
+                        NSString *today      = [fmt stringFromDate:[NSDate date]];
+                        NSString *mutation   = [NSString
+                            stringWithFormat:
+                                @"mutation InsertUserBookRead { "
+                                  @"insert_user_book_read(user_book_id: %ld, user_book_read: { "
+                                  @"progress_seconds: %ld, edition_id: %ld, started_at: \"%@\" }) { "
+                                  @"error user_book_read { id started_at finished_at edition_id "
+                                  @"progress_seconds } } }",
+                                (long) userBookId.longLongValue, (long) seconds,
+                                (long) useEditionId.longLongValue, today];
+                        [weakSelf makeGraphQLRequest:mutation
+                                      withCompletion:^(NSDictionary *respI, NSError *errI) {
+                                          if (completion)
+                                              completion(errI == nil, errI);
+                                      }];
+                    }
+                }];
+    };
+
+    if (cachedUserBookId && cachedEditionId)
+    {
+        performUpdate(cachedUserBookId, cachedEditionId);
+        return;
+    }
+
+    NSString *editionQuery =
+        [NSString stringWithFormat:@"query EditionByASIN { editions(where: {asin: {_eq: \"%@\"}}, "
+                                   @"limit: 1) { id asin book_id } }",
+                                   asin];
+
+    [self makeGraphQLRequest:editionQuery
+              withCompletion:^(NSDictionary *response, NSError *error) {
+                  if (error)
+                  {
+                      if (completion)
+                          completion(NO, error);
+                      return;
+                  }
+                  NSDictionary *data =
+                      [response isKindOfClass:[NSDictionary class]] ? response[@"data"] : nil;
+                  NSArray *editions =
+                      [data isKindOfClass:[NSDictionary class]] ? data[@"editions"] : nil;
+                  if (![editions isKindOfClass:[NSArray class]] || editions.count == 0)
+                  {
+                      if (completion)
+                          completion(NO, [NSError errorWithDomain:@"HardcoverAPI"
+                                                             code:404
+                                                         userInfo:@{
+                                                             NSLocalizedDescriptionKey :
+                                                                 @"Edition not found for ASIN"
+                                                         }]);
+                      return;
+                  }
+                  NSDictionary *edition = editions.firstObject;
+                  NSNumber     *editionId =
+                      [edition[@"id"] isKindOfClass:[NSNumber class]] ? edition[@"id"] : nil;
+                  NSNumber *bookId = [edition[@"book_id"] isKindOfClass:[NSNumber class]]
+                                         ? edition[@"book_id"]
+                                         : nil;
+                  if (!bookId)
+                  {
+                      if (completion)
+                          completion(NO, [NSError errorWithDomain:@"HardcoverAPI"
+                                                             code:404
+                                                         userInfo:@{
+                                                             NSLocalizedDescriptionKey :
+                                                                 @"Book not found for edition"
+                                                         }]);
+                      return;
+                  }
+
+                  NSString *userBookQuery = [NSString
+                      stringWithFormat:
+                          @"query UserBook { users(where: {id: {_eq: %ld}}, limit: 1) { "
+                          @"user_books(where: { book_id: {_eq: %ld} }, limit: 1) { id } } }",
+                          (long) weakSelf.currentUser.userId.longLongValue,
+                          (long) bookId.longLongValue];
+
+                  [weakSelf
+                      makeGraphQLRequest:userBookQuery
+                          withCompletion:^(NSDictionary *response2, NSError *error2) {
+                              if (error2)
+                              {
+                                  if (completion)
+                                      completion(NO, error2);
+                                  return;
+                              }
+                              NSDictionary *data2 = [response2 isKindOfClass:[NSDictionary class]]
+                                                        ? response2[@"data"]
+                                                        : nil;
+                              NSArray      *users = [data2 isKindOfClass:[NSDictionary class]]
+                                                        ? data2[@"users"]
+                                                        : nil;
+                              if (![users isKindOfClass:[NSArray class]] || users.count == 0)
+                              {
+                                  if (completion)
+                                      completion(NO, [NSError errorWithDomain:@"HardcoverAPI"
+                                                                         code:404
+                                                                     userInfo:@{
+                                                                         NSLocalizedDescriptionKey :
+                                                                             @"User not found"
+                                                                     }]);
+                                  return;
+                              }
+                              NSDictionary *userObj = users.firstObject;
+                              NSArray      *userBooks =
+                                  [userObj[@"user_books"] isKindOfClass:[NSArray class]]
+                                           ? userObj[@"user_books"]
+                                           : @[];
+                              if (userBooks.count == 0)
+                              {
+                                  if (completion)
+                                      completion(NO, [NSError errorWithDomain:@"HardcoverAPI"
+                                                                         code:404
+                                                                     userInfo:@{
+                                                                         NSLocalizedDescriptionKey :
+                                                                             @"User book not found"
+                                                                     }]);
+                                  return;
+                              }
+                              NSDictionary *ub = userBooks.firstObject;
+                              NSNumber     *userBookId =
+                                  [ub[@"id"] isKindOfClass:[NSNumber class]] ? ub[@"id"] : nil;
+                              if (asin.length > 0 && userBookId && editionId)
+                              {
+                                  weakSelf.asinToIDs[asin] =
+                                      @{@"user_book_id" : userBookId, @"edition_id" : editionId};
+                              }
+                              performUpdate(userBookId, editionId);
+                          }];
+              }];
+}
+
+- (void)markBookCompletedForASIN:(NSString *)asin
+                    totalSeconds:(NSInteger)totalSeconds
+                      completion:
+                          (void (^_Nullable)(BOOL success, NSError *_Nullable error))completion
+{
+    [self updateListeningProgressForASIN:asin
+                         progressSeconds:totalSeconds
+                            totalSeconds:totalSeconds
+                              completion:completion];
 }
 
 - (void)makeGraphQLRequest:(NSString *)query

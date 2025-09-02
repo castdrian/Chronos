@@ -45,7 +45,9 @@
 				"clear": true,
 				"close": true
 			},
-			"dependsOn": ["Build Tweak"]
+			"dependsOn": [
+				"Build Tweak"
+			]
 		},
 		{
 			"type": "shell",

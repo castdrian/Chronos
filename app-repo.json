@@ -1,0 +1,22 @@
+{
+	"name": "Chronos App Repo",
+	"identifier": "app.chronos.ios.repo",
+	"iconURL": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/38/df/fa/38dffa0e-9180-af3b-0236-d62a65360c53/AppIcon-0-0-1x_U007emarketing-0-0-0-8-0-0-85-220.png/1024x1024.jpg",
+	"website": "https://github.com/castdrian/Chronos",
+	"tintColor": "#bd56e2",
+	"featuredApps": [
+		"com.audible.iphone"
+	],
+	"apps": [
+		{
+			"name": "Chronos",
+			"bundleIdentifier": "com.audible.iphone",
+			"developerName": "Adrian Castro",
+			"subtitle": "Sync Audible progress to Hardcover.",
+			"iconURL": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/38/df/fa/38dffa0e-9180-af3b-0236-d62a65360c53/AppIcon-0-0-1x_U007emarketing-0-0-0-8-0-0-85-220.png/1024x1024.jpg",
+			"tintColor": "#ff9700",
+			"category": "entertainment",
+			"versions": []
+		}
+	]
+}

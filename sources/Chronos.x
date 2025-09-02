@@ -1,4 +1,5 @@
 #import "Chronos.h"
+#import "HardcoverAPI.h"
 
 NSString *currentASIN      = nil;
 NSString *currentContentID = nil;
@@ -199,6 +200,42 @@ static NSInteger lastLoggedChapter = -1;
     if (nowPlayingInfo)
     {
         [AudibleMetadataCapture calculateBookProgress:nowPlayingInfo];
+
+        @try
+        {
+            NSNumber   *rate          = nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate];
+            static BOOL lastIsPlaying = NO;
+            BOOL        isPlaying     = (rate ? ([rate doubleValue] > 0.0) : NO);
+            if (isPlaying != lastIsPlaying)
+            {
+                lastIsPlaying     = isPlaying;
+                NSNumber *elapsed = nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime];
+                if (elapsed && currentASIN)
+                {
+                    NSInteger seconds = (NSInteger) floor([elapsed doubleValue]);
+                    [[HardcoverAPI sharedInstance]
+                        updateListeningProgressForASIN:currentASIN
+                                       progressSeconds:seconds
+                                          totalSeconds:(NSInteger) floor(totalBookDuration)
+                                            completion:nil];
+
+                    if (!isPlaying && totalBookDuration > 0.0)
+                    {
+                        double pct = ([elapsed doubleValue] / totalBookDuration);
+                        if (pct >= 0.90)
+                        {
+                            [[HardcoverAPI sharedInstance]
+                                markBookCompletedForASIN:currentASIN
+                                            totalSeconds:(NSInteger) floor(totalBookDuration)
+                                              completion:nil];
+                        }
+                    }
+                }
+            }
+        }
+        @catch (__unused NSException *e)
+        {
+        }
     }
     %orig;
 }

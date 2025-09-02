@@ -1,4 +1,5 @@
 #import <MediaPlayer/MediaPlayer.h>
+#import "HardcoverAPI.h"
 
 @interface AudibleMetadataCapture : NSObject
 + (void)calculateBookProgress:(NSDictionary *)nowPlayingInfo;
