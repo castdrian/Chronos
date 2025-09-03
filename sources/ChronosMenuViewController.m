@@ -15,7 +15,6 @@ extern double          totalBookDuration;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) UILabel                 *titleLabel;
 @property (nonatomic, strong) UILabel                 *authorLabel;
-@property (nonatomic, strong) UILabel                 *chapterLabel;
 @property (nonatomic, strong) UILabel                 *progressLabel;
 @property (nonatomic, strong) UIView                  *asinBlock;
 @property (nonatomic, strong) UIView                  *contentIdBlock;
@@ -40,9 +39,10 @@ extern double          totalBookDuration;
 @property (nonatomic, strong) UIStackView             *currentlyReadingStack;
 @property (nonatomic, strong) NSArray                 *currentlyReadingItems;
 @property (nonatomic, strong) UIView                  *authorChip;
-@property (nonatomic, strong) UIView                  *chapterChip;
 @property (nonatomic, strong) UIView                  *progressChip;
 @property (nonatomic, strong) UIStackView             *detailsRow;
+@property (nonatomic, strong) UIScrollView            *chipsScroll;
+@property (nonatomic, strong) UIStackView             *idsRow;
 @property (nonatomic, strong) HardcoverUser           *currentlyDisplayedUser;
 @property (nonatomic, strong) NSDictionary            *currentlyDisplayedAudibleData;
 @end
@@ -67,6 +67,7 @@ extern double          totalBookDuration;
 {
     [super viewDidAppear:animated];
     [self configureSheetPresentation];
+    [self updateResponsiveLayoutForTraitCollection:self.traitCollection];
 }
 
 - (void)configureSheetPresentation
@@ -87,7 +88,9 @@ extern double          totalBookDuration;
                 [self.rootStack systemLayoutSizeFittingSize:UILayoutFittingCompressedSize];
             contentH = fitting.height + 32.0;
         }
-        BOOL useMedium = (contentH > 0.0) ? (contentH <= (screenH * 0.5)) : NO;
+        BOOL isCompactWidth =
+            (self.traitCollection.horizontalSizeClass == UIUserInterfaceSizeClassCompact);
+        BOOL useMedium = (!isCompactWidth && contentH > 0.0) ? (contentH <= (screenH * 0.5)) : NO;
 
         if (useMedium)
         {
@@ -165,13 +168,13 @@ extern double          totalBookDuration;
         [self.spinner.centerYAnchor constraintEqualToAnchor:card.centerYAnchor]
     ]];
 
-    self.titleLabel              = [self labelWithFont:blockFont weight:UIFontWeightSemibold];
-    self.authorLabel             = [self labelWithFont:13 weight:UIFontWeightRegular];
-    self.chapterLabel            = [self labelWithFont:13 weight:UIFontWeightRegular];
-    self.progressLabel           = [self labelWithFont:13 weight:UIFontWeightRegular];
-    self.authorLabel.textColor   = UIColor.secondaryLabelColor;
-    self.chapterLabel.textColor  = UIColor.secondaryLabelColor;
-    self.progressLabel.textColor = UIColor.secondaryLabelColor;
+    self.titleLabel               = [self labelWithFont:blockFont weight:UIFontWeightSemibold];
+    self.titleLabel.numberOfLines = 2;
+    self.titleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    self.authorLabel              = [self labelWithFont:13 weight:UIFontWeightRegular];
+    self.progressLabel            = [self labelWithFont:13 weight:UIFontWeightRegular];
+    self.authorLabel.textColor    = UIColor.secondaryLabelColor;
+    self.progressLabel.textColor  = UIColor.secondaryLabelColor;
 
     UILabel  *asinLabel      = nil;
     UIButton *asinCopyButton = nil;
@@ -196,22 +199,42 @@ extern double          totalBookDuration;
     self.contentIdCopyButton      = contentIdCopyButton;
 
     self.authorChip   = [self chipWithIcon:@"person.fill" label:self.authorLabel];
-    self.chapterChip  = [self chipWithIcon:@"bookmark.fill" label:self.chapterLabel];
     self.progressChip = [self chipWithIcon:@"clock.fill" label:self.progressLabel];
 
-    self.detailsRow                                           = [[UIStackView alloc]
-        initWithArrangedSubviews:@[ self.authorChip, self.chapterChip, self.progressChip ]];
+    self.detailsRow =
+        [[UIStackView alloc] initWithArrangedSubviews:@[ self.authorChip, self.progressChip ]];
     self.detailsRow.axis                                      = UILayoutConstraintAxisHorizontal;
     self.detailsRow.spacing                                   = 6;
     self.detailsRow.alignment                                 = UIStackViewAlignmentLeading;
     self.detailsRow.distribution                              = UIStackViewDistributionFill;
     self.detailsRow.translatesAutoresizingMaskIntoConstraints = NO;
+
+    self.chipsScroll                                           = [[UIScrollView alloc] init];
+    self.chipsScroll.translatesAutoresizingMaskIntoConstraints = NO;
+    self.chipsScroll.showsHorizontalScrollIndicator            = NO;
+    self.chipsScroll.showsVerticalScrollIndicator              = NO;
+    self.chipsScroll.alwaysBounceHorizontal                    = YES;
+    self.chipsScroll.alwaysBounceVertical                      = NO;
+    [self.chipsScroll addSubview:self.detailsRow];
+    [NSLayoutConstraint activateConstraints:@[
+        [self.detailsRow.leadingAnchor
+            constraintEqualToAnchor:self.chipsScroll.contentLayoutGuide.leadingAnchor],
+        [self.detailsRow.trailingAnchor
+            constraintEqualToAnchor:self.chipsScroll.contentLayoutGuide.trailingAnchor],
+        [self.detailsRow.topAnchor
+            constraintEqualToAnchor:self.chipsScroll.contentLayoutGuide.topAnchor],
+        [self.detailsRow.bottomAnchor
+            constraintEqualToAnchor:self.chipsScroll.contentLayoutGuide.bottomAnchor],
+        [self.detailsRow.heightAnchor
+            constraintEqualToAnchor:self.chipsScroll.frameLayoutGuide.heightAnchor]
+    ]];
+    [[self.chipsScroll.heightAnchor constraintEqualToConstant:28] setActive:YES];
     UIStackView *metaStack =
-        [[UIStackView alloc] initWithArrangedSubviews:@[ self.titleLabel, self.detailsRow ]];
+        [[UIStackView alloc] initWithArrangedSubviews:@[ self.titleLabel, self.chipsScroll ]];
     metaStack.axis                                      = UILayoutConstraintAxisVertical;
     metaStack.spacing                                   = spacing;
     metaStack.translatesAutoresizingMaskIntoConstraints = NO;
-    metaStack.alignment                                 = UIStackViewAlignmentLeading;
+    metaStack.alignment                                 = UIStackViewAlignmentFill;
     metaStack.distribution                              = UIStackViewDistributionFill;
 
     UIStackView *asinStack =
@@ -222,9 +245,11 @@ extern double          totalBookDuration;
     asinStack.translatesAutoresizingMaskIntoConstraints = NO;
     [asinTitleLabel setContentHuggingPriority:UILayoutPriorityRequired
                                       forAxis:UILayoutConstraintAxisHorizontal];
-    [self.asinBlock setContentCompressionResistancePriority:UILayoutPriorityRequired
+    [asinTitleLabel setContentCompressionResistancePriority:UILayoutPriorityRequired
                                                     forAxis:UILayoutConstraintAxisHorizontal];
-    [self.asinBlock setContentHuggingPriority:UILayoutPriorityRequired
+    [self.asinBlock setContentCompressionResistancePriority:UILayoutPriorityDefaultHigh
+                                                    forAxis:UILayoutConstraintAxisHorizontal];
+    [self.asinBlock setContentHuggingPriority:UILayoutPriorityDefaultLow
                                       forAxis:UILayoutConstraintAxisHorizontal];
 
     UIStackView *contentIdStack                              = [[UIStackView alloc]
@@ -235,9 +260,11 @@ extern double          totalBookDuration;
     contentIdStack.translatesAutoresizingMaskIntoConstraints = NO;
     [contentIdTitleLabel setContentHuggingPriority:UILayoutPriorityRequired
                                            forAxis:UILayoutConstraintAxisHorizontal];
-    [self.contentIdBlock setContentCompressionResistancePriority:UILayoutPriorityRequired
+    [contentIdTitleLabel setContentCompressionResistancePriority:UILayoutPriorityRequired
                                                          forAxis:UILayoutConstraintAxisHorizontal];
-    [self.contentIdBlock setContentHuggingPriority:UILayoutPriorityRequired
+    [self.contentIdBlock setContentCompressionResistancePriority:UILayoutPriorityDefaultHigh
+                                                         forAxis:UILayoutConstraintAxisHorizontal];
+    [self.contentIdBlock setContentHuggingPriority:UILayoutPriorityDefaultLow
                                            forAxis:UILayoutConstraintAxisHorizontal];
 
     UIStackView *idsRow =
@@ -245,8 +272,11 @@ extern double          totalBookDuration;
     idsRow.axis                                      = UILayoutConstraintAxisHorizontal;
     idsRow.spacing                                   = spacing;
     idsRow.alignment                                 = UIStackViewAlignmentLeading;
-    idsRow.distribution                              = UIStackViewDistributionFillProportionally;
+    idsRow.distribution                              = UIStackViewDistributionFill;
     idsRow.translatesAutoresizingMaskIntoConstraints = NO;
+    self.idsRow                                      = idsRow;
+    [[self.asinBlock.widthAnchor constraintEqualToAnchor:self.contentIdBlock.widthAnchor]
+        setActive:YES];
 
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[ metaStack, idsRow ]];
     stack.axis         = UILayoutConstraintAxisVertical;
@@ -263,6 +293,8 @@ extern double          totalBookDuration;
     ]];
     stack.hidden = YES;
     stack.tag    = 101;
+
+    [self updateResponsiveLayoutForTraitCollection:self.traitCollection];
 
     UIView *hardcoverCard             = [[UIView alloc] init];
     hardcoverCard.backgroundColor     = UIColor.secondarySystemBackgroundColor;
@@ -325,6 +357,30 @@ extern double          totalBookDuration;
         [aboutRow.topAnchor constraintEqualToAnchor:aboutCard.topAnchor constant:margin],
         [aboutRow.bottomAnchor constraintEqualToAnchor:aboutCard.bottomAnchor constant:-margin]
     ]];
+}
+
+- (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection
+{
+    [super traitCollectionDidChange:previousTraitCollection];
+    if (previousTraitCollection.horizontalSizeClass != self.traitCollection.horizontalSizeClass ||
+        previousTraitCollection.verticalSizeClass != self.traitCollection.verticalSizeClass)
+    {
+        [self updateResponsiveLayoutForTraitCollection:self.traitCollection];
+        [self configureSheetPresentation];
+    }
+}
+
+- (void)updateResponsiveLayoutForTraitCollection:(UITraitCollection *)traits
+{
+    BOOL compactW = (traits.horizontalSizeClass == UIUserInterfaceSizeClassCompact);
+    if (self.idsRow)
+    {
+        self.idsRow.axis =
+            compactW ? UILayoutConstraintAxisVertical : UILayoutConstraintAxisHorizontal;
+        self.idsRow.spacing      = compactW ? 8 : 6;
+        self.idsRow.alignment    = UIStackViewAlignmentFill;
+        self.idsRow.distribution = UIStackViewDistributionFill;
+    }
 }
 
 - (UILabel *)labelWithFont:(CGFloat)size weight:(UIFontWeight)weight
@@ -879,12 +935,10 @@ extern double          totalBookDuration;
 
         self.titleLabel.text    = data[@"bookTitle"];
         self.authorLabel.text   = data[@"author"];
-        self.chapterLabel.text  = data[@"chapterTitle"];
         self.progressLabel.text = data[@"progressStr"];
 
         double totalBookDuration = [data[@"totalBookDuration"] doubleValue];
         self.authorChip.hidden   = (((NSString *) data[@"author"]).length == 0);
-        self.chapterChip.hidden  = (((NSString *) data[@"chapterTitle"]).length == 0);
         self.progressChip.hidden = (totalBookDuration <= 0.0);
 
         self.asinLabel.text      = data[@"asin"];
@@ -984,8 +1038,7 @@ extern double          totalBookDuration;
         HardcoverUser *cached = [self loadCachedHardcoverUser];
         if (cached)
         {
-            self.currentlyDisplayedUser =
-                [self copyUser:cached];
+            self.currentlyDisplayedUser = [self copyUser:cached];
             [self updateHardcoverUI:cached];
             if (self.currentlyReadingItems)
             {
@@ -1200,8 +1253,7 @@ extern double          totalBookDuration;
         return;
     }
     __weak typeof(self) weakSelf = self;
-    NSArray *previousItems       = self.currentlyReadingItems ? [self.currentlyReadingItems copy]
-                                                              : nil;
+    NSArray *previousItems = self.currentlyReadingItems ? [self.currentlyReadingItems copy] : nil;
 
     [[HardcoverAPI sharedInstance]
         fetchCurrentlyReadingForUserId:user.userId
@@ -1707,7 +1759,7 @@ extern double          totalBookDuration;
         return;
 
     NSMutableDictionary *cacheDict = [audibleData mutableCopy];
-    cacheDict[@"cachedAt"] = @([[NSDate date] timeIntervalSince1970]);
+    cacheDict[@"cachedAt"]         = @([[NSDate date] timeIntervalSince1970]);
 
     [[NSUserDefaults standardUserDefaults] setObject:cacheDict forKey:@"ChronosCachedAudibleData"];
     [[NSUserDefaults standardUserDefaults] synchronize];
