@@ -19,7 +19,7 @@ Sync Audible progress to Hardcover.
 <a href="https://tinyurl.com/chronos-sidestore"><img src="https://adriancastro.dev/basmxxk8sj3k.png" width="230"></a>
 
 > [!WARNING]
-> Trying to use non-ellekit tweak runtimes will likely break functionality. Ideally always use the pre-patched ipa when sideloading.
+> When sideloading Audible it would appear that only streaming content works. Downloads don't seem to function properly.
 
 - Download and install [Audible.ipa](https://github.com/castdrian/Chronos/releases/latest/download/Audible.ipa) using your preferred sideloading method.
 
