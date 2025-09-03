@@ -167,27 +167,34 @@ static NSInteger lastLoggedChapter = -1;
         if (fabs(totalElapsedSeconds - lastLoggedElapsed) < 1.0 &&
             currentChapterIndex == lastLoggedChapter)
             return;
-        lastLoggedElapsed     = totalElapsedSeconds;
-        lastLoggedChapter     = currentChapterIndex;
-        double percent        = (totalElapsedSeconds / totalBookDuration) * 100.0;
-        int    elapsedHours   = (int) (totalElapsedSeconds / 3600);
-        int    elapsedMinutes = (int) ((totalElapsedSeconds - (elapsedHours * 3600)) / 60);
-        int    elapsedSecs    = (int) totalElapsedSeconds % 60;
-        int    totalHours     = (int) (totalBookDuration / 3600);
-        int    totalMinutes   = (int) ((totalBookDuration - (totalHours * 3600)) / 60);
-        int    totalSecs      = (int) totalBookDuration % 60;
-        NSLog(@"[Chronos] PROGRESS: %.1f%% complete (%02d:%02d:%02d / %02d:%02d:%02d) - Chapter "
-              @"%ld of %ld%@%@",
-              percent, elapsedHours, elapsedMinutes, elapsedSecs, totalHours, totalMinutes,
-              totalSecs, (long) (currentChapterIndex + 1), (long) [allChapters count],
-              currentASIN ? [[NSString stringWithFormat:@" - ASIN: %@", currentASIN] description]
-                          : @"",
-              currentContentID
-                  ? [[NSString stringWithFormat:@" - Content ID: %@", currentContentID] description]
-                  : @"");
+
+        lastLoggedElapsed = totalElapsedSeconds;
+        lastLoggedChapter = currentChapterIndex;
+
+        if (currentASIN && currentASIN.length > 0)
+        {
+            NSInteger progressSeconds = (NSInteger) floor(totalElapsedSeconds);
+            NSInteger totalSeconds    = (NSInteger) floor(totalBookDuration);
+
+            [[HardcoverAPI sharedInstance]
+                updateListeningProgressForASIN:currentASIN
+                               progressSeconds:progressSeconds
+                                  totalSeconds:totalSeconds
+                                    completion:^(BOOL success, NSError *error) {
+                                        if (!success)
+                                        {
+                                            NSLog(
+                                                @"[Chronos] Progress update failed for ASIN %@: %@",
+                                                currentASIN,
+                                                error ? error.localizedDescription
+                                                      : @"Unknown error");
+                                        }
+                                    }];
+        }
     }
     @catch (__unused NSException *e)
     {
+        NSLog(@"[Chronos] Exception in calculateBookProgress: %@", e.description);
     }
 }
 
@@ -210,31 +217,30 @@ static NSInteger lastLoggedChapter = -1;
             {
                 lastIsPlaying     = isPlaying;
                 NSNumber *elapsed = nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime];
-                if (elapsed && currentASIN)
-                {
-                    NSInteger seconds = (NSInteger) floor([elapsed doubleValue]);
-                    [[HardcoverAPI sharedInstance]
-                        updateListeningProgressForASIN:currentASIN
-                                       progressSeconds:seconds
-                                          totalSeconds:(NSInteger) floor(totalBookDuration)
-                                            completion:nil];
 
-                    if (!isPlaying && totalBookDuration > 0.0)
+                if (!isPlaying && elapsed && currentASIN && totalBookDuration > 0.0)
+                {
+                    double pct = ([elapsed doubleValue] / totalBookDuration);
+                    if (pct >= 0.90)
                     {
-                        double pct = ([elapsed doubleValue] / totalBookDuration);
-                        if (pct >= 0.90)
-                        {
-                            [[HardcoverAPI sharedInstance]
-                                markBookCompletedForASIN:currentASIN
-                                            totalSeconds:(NSInteger) floor(totalBookDuration)
-                                              completion:nil];
-                        }
+                        [[HardcoverAPI sharedInstance]
+                            markBookCompletedForASIN:currentASIN
+                                        totalSeconds:(NSInteger) floor(totalBookDuration)
+                                          completion:^(BOOL success, NSError *error) {
+                                              if (!success)
+                                              {
+                                                  NSLog(@"[Chronos] Failed to mark book "
+                                                        @"completed for ASIN %@: %@",
+                                                        currentASIN, error.localizedDescription);
+                                              }
+                                          }];
                     }
                 }
             }
         }
         @catch (__unused NSException *e)
         {
+            NSLog(@"[Chronos] Exception in progress update: %@", e.description);
         }
     }
     %orig;

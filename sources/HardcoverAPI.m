@@ -1,8 +1,7 @@
 #import "HardcoverAPI.h"
 
-@interface HardcoverAPI ()
-@property (nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *>
-    *asinToIDs;
+@interface                                                                     HardcoverAPI ()
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *asinToIDs;
 @end
 
 @implementation HardcoverUser
@@ -38,6 +37,101 @@
     _currentUser  = nil;
 }
 
+- (void)makeGraphQLRequest:(NSString *)query
+            withCompletion:(void (^)(NSDictionary *response, NSError *error))completion
+{
+    [self makeGraphQLRequestWithQuery:query variables:nil completion:completion];
+}
+
+- (void)makeGraphQLRequestWithQuery:(NSString *)query
+                          variables:(NSDictionary *)variables
+                         completion:(void (^)(NSDictionary *response, NSError *error))completion
+{
+    NSURL               *url     = [NSURL URLWithString:@"https://api.hardcover.app/v1/graphql"];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+    [request setHTTPMethod:@"POST"];
+    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    if (_apiToken.length > 0)
+    {
+        [request setValue:[NSString stringWithFormat:@"Bearer %@", _apiToken]
+            forHTTPHeaderField:@"Authorization"];
+    }
+
+    NSMutableDictionary *body = [@{@"query" : query} mutableCopy];
+    if (variables)
+    {
+        body[@"variables"] = variables;
+    }
+
+    NSError *jsonError;
+    NSData  *jsonData = [NSJSONSerialization dataWithJSONObject:body options:0 error:&jsonError];
+
+    if (jsonError)
+    {
+
+        if (completion)
+            completion(nil, jsonError);
+        return;
+    }
+
+    [request setHTTPBody:jsonData];
+
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession]
+        dataTaskWithRequest:request
+          completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+              dispatch_async(dispatch_get_main_queue(), ^{
+                  if (error)
+                  {
+                      if (completion)
+                          completion(nil, error);
+                      return;
+                  }
+
+                  if (!data)
+                  {
+                      NSError *noDataError = [NSError
+                          errorWithDomain:@"HardcoverAPI"
+                                     code:500
+                                 userInfo:@{NSLocalizedDescriptionKey : @"No data received"}];
+                      if (completion)
+                          completion(nil, noDataError);
+                      return;
+                  }
+
+                  NSError      *parseError;
+                  NSDictionary *responseDict = [NSJSONSerialization JSONObjectWithData:data
+                                                                               options:0
+                                                                                 error:&parseError];
+
+                  if (parseError)
+                  {
+                      if (completion)
+                          completion(nil, parseError);
+                      return;
+                  }
+
+                  NSArray *errors = responseDict[@"errors"];
+                  if (errors && [errors isKindOfClass:[NSArray class]] && errors.count > 0)
+                  {
+                      NSDictionary *firstError   = errors.firstObject;
+                      NSString     *errorMessage = firstError[@"message"] ?: @"GraphQL error";
+                      NSError      *gqlError =
+                          [NSError errorWithDomain:@"HardcoverAPI"
+                                              code:400
+                                          userInfo:@{NSLocalizedDescriptionKey : errorMessage}];
+                      if (completion)
+                          completion(nil, gqlError);
+                      return;
+                  }
+
+                  if (completion)
+                      completion(responseDict, nil);
+              });
+          }];
+
+    [task resume];
+}
+
 - (void)authorizeWithCompletion:(void (^)(BOOL success, HardcoverUser *user,
                                           NSError *error))completion
 {
@@ -45,7 +139,7 @@
     {
         NSError *error =
             [NSError errorWithDomain:@"HardcoverAPI"
-                                code:400
+                                code:401
                             userInfo:@{NSLocalizedDescriptionKey : @"No API token provided"}];
         if (completion)
             completion(NO, nil, error);
@@ -75,7 +169,9 @@
                       NSError *authError = [NSError
                           errorWithDomain:@"HardcoverAPI"
                                      code:401
-                                 userInfo:@{NSLocalizedDescriptionKey : @"Invalid API token"}];
+                                 userInfo:@{
+                                     NSLocalizedDescriptionKey : @"Invalid response or no user"
+                                 }];
                       self.isAuthorized  = NO;
                       self.currentUser   = nil;
                       if (completion)
@@ -146,41 +242,53 @@
 - (void)fetchCurrentlyReadingForUserId:(NSNumber *)userId
                             completion:(void (^)(NSArray *items, NSError *error))completion
 {
-    if (!self.apiToken || self.apiToken.length == 0)
+    if (!_apiToken || _apiToken.length == 0)
     {
+        NSError *error =
+            [NSError errorWithDomain:@"HardcoverAPI"
+                                code:400
+                            userInfo:@{NSLocalizedDescriptionKey : @"No API token provided"}];
         if (completion)
-            completion(nil,
-                       [NSError errorWithDomain:@"HardcoverAPI"
-                                           code:401
-                                       userInfo:@{NSLocalizedDescriptionKey : @"Missing token"}]);
+            completion(nil, error);
         return;
     }
+
     if (!userId)
     {
         userId = self.currentUser.userId;
         if (!userId)
         {
+            NSError *error =
+                [NSError errorWithDomain:@"HardcoverAPI"
+                                    code:400
+                                userInfo:@{NSLocalizedDescriptionKey : @"Missing user id"}];
             if (completion)
-                completion(nil,
-                           [NSError
-                               errorWithDomain:@"HardcoverAPI"
-                                          code:400
-                                      userInfo:@{NSLocalizedDescriptionKey : @"Missing user id"}]);
+                completion(nil, error);
             return;
         }
     }
 
-    NSString *query = [NSString
-        stringWithFormat:
-            @"query CurrentlyReading {\n  users(where: {id: {_eq: %ld}}, limit: 1) {\n    id\n    "
-            @"username\n    user_books(where: {status_id: {_eq: 2}}) {\n      id\n      "
-            @"user_book_reads {\n  "
-            @"        user_book {\n          book {\n            id\n            title\n           "
-            @" "
-            @"image { url }\n  "
-            @"          }\n        }\n        edition { id asin audio_seconds }\n        "
-            @"progress_seconds\n      }\n    }\n  }\n}",
-            (long) userId.longLongValue];
+    NSString *query = [NSString stringWithFormat:@"query CurrentlyReading {\n"
+                                                 @"  users(where: {id: {_eq: %ld}}, limit: 1) {\n"
+                                                 @"    id\n"
+                                                 @"    username\n"
+                                                 @"    user_books(where: {status_id: {_eq: 2}}) {\n"
+                                                 @"      id\n"
+                                                 @"      user_book_reads {\n"
+                                                 @"        user_book {\n"
+                                                 @"          book {\n"
+                                                 @"            id\n"
+                                                 @"            title\n"
+                                                 @"            image { url }\n"
+                                                 @"          }\n"
+                                                 @"        }\n"
+                                                 @"        edition { id asin audio_seconds }\n"
+                                                 @"        progress_seconds\n"
+                                                 @"      }\n"
+                                                 @"    }\n"
+                                                 @"  }\n"
+                                                 @"}",
+                                                 (long) userId.longLongValue];
 
     [self makeGraphQLRequest:query
               withCompletion:^(NSDictionary *response, NSError *error) {
@@ -190,6 +298,7 @@
                           completion(nil, error);
                       return;
                   }
+
                   NSDictionary *data = response[@"data"];
                   NSArray *users = [data isKindOfClass:[NSDictionary class]] ? data[@"users"] : nil;
                   if (![users isKindOfClass:[NSArray class]] || users.count == 0)
@@ -198,6 +307,7 @@
                           completion(@[], nil);
                       return;
                   }
+
                   NSDictionary *user = users.firstObject;
                   NSArray      *user_books =
                       ([user isKindOfClass:[NSDictionary class]] ? user[@"user_books"] : nil);
@@ -205,15 +315,18 @@
 
                   NSMutableDictionary *itemsByBookId = [NSMutableDictionary dictionary];
                   NSMutableArray      *ordered       = [NSMutableArray array];
+
                   for (id ub in user_books)
                   {
                       if (![ub isKindOfClass:[NSDictionary class]])
                           continue;
+
                       NSNumber *userBookId =
                           [ub[@"id"] isKindOfClass:[NSNumber class]] ? ub[@"id"] : nil;
                       NSArray *reads = ((NSDictionary *) ub)[@"user_book_reads"];
                       if (![reads isKindOfClass:[NSArray class]])
                           continue;
+
                       for (id readObj in reads)
                       {
                           if (![readObj isKindOfClass:[NSDictionary class]])
@@ -272,6 +385,7 @@
                               itemsByBookId[bookId] = entry;
                               [ordered addObject:entry];
                           }
+
                           if (asin.length > 0)
                           {
                               NSMutableSet *asins = entry[@"asins"];
@@ -282,6 +396,7 @@
                                       @{@"user_book_id" : userBookId, @"edition_id" : editionId};
                               }
                           }
+
                           if (audioSeconds)
                               entry[@"audio_seconds"] = audioSeconds;
                           if (progressSeconds)
@@ -292,12 +407,14 @@
                               entry[@"edition_id"] = editionId;
                       }
                   }
+
                   for (NSMutableDictionary *entry in ordered)
                   {
                       NSMutableSet *asins = entry[@"asins"];
                       if ([asins isKindOfClass:[NSMutableSet class]])
                           entry[@"asins"] = asins.allObjects ?: @[];
                   }
+
                   if (completion)
                       completion(ordered, nil);
               }];
@@ -311,220 +428,627 @@
                             completion:(void (^_Nullable)(BOOL success,
                                                           NSError *_Nullable error))completion
 {
-    if (!self.apiToken || self.apiToken.length == 0 || !self.currentUser.userId || asin.length == 0)
+    if (!self.apiToken || self.apiToken.length == 0)
     {
+        NSError *error = [NSError errorWithDomain:@"HardcoverAPI"
+                                             code:401
+                                         userInfo:@{NSLocalizedDescriptionKey : @"No API token"}];
         if (completion)
-            completion(
-                NO, [NSError errorWithDomain:@"HardcoverAPI"
-                                        code:400
-                                    userInfo:@{
-                                        NSLocalizedDescriptionKey : @"Missing token, user, or ASIN"
-                                    }]);
+            completion(NO, error);
         return;
     }
-    NSDictionary *ids = self.asinToIDs[asin];
-    NSNumber     *cachedUserBookId =
-        [ids[@"user_book_id"] isKindOfClass:[NSNumber class]] ? ids[@"user_book_id"] : nil;
-    NSNumber *cachedEditionId =
-        [ids[@"edition_id"] isKindOfClass:[NSNumber class]] ? ids[@"edition_id"] : nil;
 
-    __weak typeof(self) weakSelf                                     = self;
-    void (^performUpdate)(NSNumber *userBookId, NSNumber *editionId) = ^(NSNumber *userBookId,
-                                                                         NSNumber *editionId) {
-        if (!userBookId || !editionId)
-        {
-            if (completion)
-            {
-                completion(NO, [NSError errorWithDomain:@"HardcoverAPI"
-                                                   code:404
-                                               userInfo:@{
-                                                   NSLocalizedDescriptionKey :
-                                                       @"Missing user_book_id or edition_id"
-                                               }]);
-            }
-            return;
-        }
-
-        NSString *latestReadQuery = [NSString
-            stringWithFormat:@"query LatestRead { user_book_reads(where: {user_book_id: {_eq: "
-                             @"%ld}}, order_by: {created_at: desc}, limit: 1) { id edition_id } }",
-                             (long) userBookId.longLongValue];
-
-        [weakSelf
-            makeGraphQLRequest:latestReadQuery
-                withCompletion:^(NSDictionary *resp, NSError *err) {
-                    if (err)
-                    {
-                        if (completion)
-                            completion(NO, err);
-                        return;
-                    }
-                    NSDictionary *data =
-                        [resp isKindOfClass:[NSDictionary class]] ? resp[@"data"] : nil;
-                    NSArray *reads =
-                        [data isKindOfClass:[NSDictionary class]] ? data[@"user_book_reads"] : nil;
-                    NSDictionary *latest =
-                        ([reads isKindOfClass:[NSArray class]] && reads.count > 0)
-                            ? reads.firstObject
-                            : nil;
-                    NSNumber *readId =
-                        [latest[@"id"] isKindOfClass:[NSNumber class]] ? latest[@"id"] : nil;
-                    NSNumber *existingEditionId =
-                        [latest[@"edition_id"] isKindOfClass:[NSNumber class]]
-                            ? latest[@"edition_id"]
-                            : nil;
-                    NSNumber *useEditionId = cachedEditionId ?: existingEditionId ?: editionId;
-
-                    if (readId)
-                    {
-                        NSString *mutation = [NSString
-                            stringWithFormat:
-                                @"mutation UpdateBookProgress { update_user_book_read(id: %ld, "
-                                @"object: { progress_seconds: %ld, edition_id: %ld }) { error "
-                                @"user_book_read { id progress_seconds edition_id started_at } } }",
-                                (long) readId.longLongValue, (long) seconds,
-                                (long) useEditionId.longLongValue];
-                        [weakSelf makeGraphQLRequest:mutation
-                                      withCompletion:^(NSDictionary *respU, NSError *errU) {
-                                          if (completion)
-                                              completion(errU == nil, errU);
-                                      }];
-                    }
-                    else
-                    {
-                        NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
-                        fmt.dateFormat       = @"yyyy-MM-dd";
-                        NSString *today      = [fmt stringFromDate:[NSDate date]];
-                        NSString *mutation   = [NSString
-                            stringWithFormat:
-                                @"mutation InsertUserBookRead { "
-                                  @"insert_user_book_read(user_book_id: %ld, user_book_read: { "
-                                  @"progress_seconds: %ld, edition_id: %ld, started_at: \"%@\" }) { "
-                                  @"error user_book_read { id started_at finished_at edition_id "
-                                  @"progress_seconds } } }",
-                                (long) userBookId.longLongValue, (long) seconds,
-                                (long) useEditionId.longLongValue, today];
-                        [weakSelf makeGraphQLRequest:mutation
-                                      withCompletion:^(NSDictionary *respI, NSError *errI) {
-                                          if (completion)
-                                              completion(errI == nil, errI);
-                                      }];
-                    }
-                }];
-    };
-
-    if (cachedUserBookId && cachedEditionId)
+    if (!self.currentUser.userId)
     {
-        performUpdate(cachedUserBookId, cachedEditionId);
+        [self authorizeWithCompletion:^(BOOL success, HardcoverUser *user, NSError *authError) {
+            if (success && user.userId)
+            {
+                [self updateListeningProgressForASIN:asin
+                                     progressSeconds:seconds
+                                        totalSeconds:totalSeconds
+                                          completion:completion];
+            }
+            else
+            {
+                NSError *error =
+                    authError
+                        ?: [NSError errorWithDomain:@"HardcoverAPI"
+                                               code:401
+                                           userInfo:@{
+                                               NSLocalizedDescriptionKey : @"Authentication failed"
+                                           }];
+                if (completion)
+                    completion(NO, error);
+            }
+        }];
         return;
     }
 
-    NSString *editionQuery =
-        [NSString stringWithFormat:@"query EditionByASIN { editions(where: {asin: {_eq: \"%@\"}}, "
-                                   @"limit: 1) { id asin book_id } }",
-                                   asin];
+    if (!asin || asin.length == 0)
+    {
+        NSError *error =
+            [NSError errorWithDomain:@"HardcoverAPI"
+                                code:400
+                            userInfo:@{NSLocalizedDescriptionKey : @"No ASIN provided"}];
+        if (completion)
+            completion(NO, error);
+        return;
+    }
 
-    [self makeGraphQLRequest:editionQuery
+    [self
+        getLatestReadForASIN:asin
+                  completion:^(NSDictionary *readData, NSError *error) {
+                      if (error)
+                      {
+                          if (completion)
+                              completion(NO, error);
+                          return;
+                      }
+
+                      if (!readData)
+                      {
+
+                          [self
+                              findUserBookAndEditionForASIN:asin
+                                                 completion:^(NSDictionary *bookData,
+                                                              NSError      *bookError) {
+                                                     if (bookError || !bookData)
+                                                     {
+                                                         NSError *notFoundError = [NSError
+                                                             errorWithDomain:@"HardcoverAPI"
+                                                                        code:404
+                                                                    userInfo:@{
+                                                                        NSLocalizedDescriptionKey :
+                                                                            @"Book not found in "
+                                                                            @"user's library"
+                                                                    }];
+                                                         if (completion)
+                                                             completion(NO, notFoundError);
+                                                         return;
+                                                     }
+
+                                                     NSNumber *userBookId = bookData[@"userBookId"];
+                                                     NSNumber *editionId  = bookData[@"editionId"];
+
+                                                     [self
+                                                         insertUserBookRead:userBookId
+                                                            progressSeconds:seconds
+                                                                  editionId:editionId
+                                                                 completion:^(
+                                                                     NSDictionary *newReadData,
+                                                                     NSError      *insertError) {
+                                                                     if (insertError ||
+                                                                         !newReadData)
+                                                                     {
+                                                                         if (completion)
+                                                                             completion(
+                                                                                 NO, insertError);
+                                                                         return;
+                                                                     }
+
+                                                                     self.asinToIDs[asin] = @{
+                                                                         @"user_book_id" :
+                                                                                 newReadData
+                                                                                     [@"userBook"
+                                                                                      @"Id"]
+                                                                             ?: @0,
+                                                                         @"edition_id" : newReadData
+                                                                                 [@"editionI"
+                                                                                  @"d"]
+                                                                             ?: @0,
+                                                                         @"audio_seconds" : bookData
+                                                                                 [@"audioSec"
+                                                                                  @"onds"]
+                                                                             ?: @0
+                                                                     };
+
+                                                                     if (completion)
+                                                                         completion(YES, nil);
+                                                                 }];
+                                                 }];
+                          return;
+                      }
+
+                      NSNumber *readId         = readData[@"readId"];
+                      NSNumber *foundEditionId = readData[@"editionId"];
+
+                      self.asinToIDs[asin] = @{
+                          @"user_book_id" : readData[@"userBookId"] ?: @0,
+                          @"edition_id" : foundEditionId,
+                          @"audio_seconds" : readData[@"audioSeconds"] ?: @0
+                      };
+
+                      NSString *startedAt    = nil;
+                      id        startedAtVal = readData[@"startedAt"];
+                      if ([startedAtVal isKindOfClass:[NSString class]])
+                      {
+                          startedAt = startedAtVal;
+                      }
+
+                      [self updateExistingReadProgress:readId
+                                       progressSeconds:seconds
+                                             editionId:foundEditionId
+                                             startedAt:startedAt
+                                            completion:completion];
+                  }];
+}
+
+- (void)getLatestReadForASIN:(NSString *)asin
+                  completion:(void (^)(NSDictionary *readData, NSError *error))completion
+{
+    NSString *query = @"query getLatestRead { "
+                      @"me { "
+                      @"user_books(where: {status_id: {_eq: 2}}, order_by: {updated_at: desc}) { "
+                      @"id "
+                      @"user_book_reads { "
+                      @"id "
+                      @"progress_seconds "
+                      @"started_at "
+                      @"finished_at "
+                      @"edition { "
+                      @"id "
+                      @"asin "
+                      @"audio_seconds "
+                      @"} "
+                      @"} "
+                      @"} "
+                      @"} "
+                      @"}";
+
+    [self makeGraphQLRequest:query
               withCompletion:^(NSDictionary *response, NSError *error) {
                   if (error)
                   {
                       if (completion)
-                          completion(NO, error);
-                      return;
-                  }
-                  NSDictionary *data =
-                      [response isKindOfClass:[NSDictionary class]] ? response[@"data"] : nil;
-                  NSArray *editions =
-                      [data isKindOfClass:[NSDictionary class]] ? data[@"editions"] : nil;
-                  if (![editions isKindOfClass:[NSArray class]] || editions.count == 0)
-                  {
-                      if (completion)
-                          completion(NO, [NSError errorWithDomain:@"HardcoverAPI"
-                                                             code:404
-                                                         userInfo:@{
-                                                             NSLocalizedDescriptionKey :
-                                                                 @"Edition not found for ASIN"
-                                                         }]);
-                      return;
-                  }
-                  NSDictionary *edition = editions.firstObject;
-                  NSNumber     *editionId =
-                      [edition[@"id"] isKindOfClass:[NSNumber class]] ? edition[@"id"] : nil;
-                  NSNumber *bookId = [edition[@"book_id"] isKindOfClass:[NSNumber class]]
-                                         ? edition[@"book_id"]
-                                         : nil;
-                  if (!bookId)
-                  {
-                      if (completion)
-                          completion(NO, [NSError errorWithDomain:@"HardcoverAPI"
-                                                             code:404
-                                                         userInfo:@{
-                                                             NSLocalizedDescriptionKey :
-                                                                 @"Book not found for edition"
-                                                         }]);
+                          completion(nil, error);
                       return;
                   }
 
-                  NSString *userBookQuery = [NSString
-                      stringWithFormat:
-                          @"query UserBook { users(where: {id: {_eq: %ld}}, limit: 1) { "
-                          @"user_books(where: { book_id: {_eq: %ld} }, limit: 1) { id } } }",
-                          (long) weakSelf.currentUser.userId.longLongValue,
-                          (long) bookId.longLongValue];
+                  @try
+                  {
+                      NSDictionary *data  = response[@"data"];
+                      NSArray      *users = data[@"me"];
 
-                  [weakSelf
-                      makeGraphQLRequest:userBookQuery
-                          withCompletion:^(NSDictionary *response2, NSError *error2) {
-                              if (error2)
+                      if (!users || users.count == 0)
+                      {
+                          if (completion)
+                              completion(nil, nil);
+                          return;
+                      }
+
+                      NSDictionary *user      = users.firstObject;
+                      NSArray      *userBooks = user[@"user_books"];
+
+                      if (![userBooks isKindOfClass:[NSArray class]] || userBooks.count == 0)
+                      {
+                          if (completion)
+                              completion(nil, nil);
+                          return;
+                      }
+
+                      for (NSDictionary *userBook in userBooks)
+                      {
+                          if (![userBook isKindOfClass:[NSDictionary class]])
+                              continue;
+
+                          NSArray *reads = userBook[@"user_book_reads"];
+                          if (![reads isKindOfClass:[NSArray class]] || reads.count == 0)
+                              continue;
+
+                          for (NSInteger i = (NSInteger) reads.count - 1; i >= 0; i--)
+                          {
+                              NSDictionary *read = reads[i];
+                              if (![read isKindOfClass:[NSDictionary class]])
+                                  continue;
+
+                              NSDictionary *edition = read[@"edition"];
+                              if (![edition isKindOfClass:[NSDictionary class]])
+                                  continue;
+
+                              NSString *editionASIN = edition[@"asin"];
+                              if (![editionASIN isKindOfClass:[NSString class]])
+                                  continue;
+
+                              if ([editionASIN isEqualToString:asin])
                               {
+                                  NSDictionary *readData = @{
+                                      @"readId" : read[@"id"] ?: @0,
+                                      @"userBookId" : userBook[@"id"] ?: @0,
+                                      @"editionId" : edition[@"id"] ?: @0,
+                                      @"audioSeconds" : edition[@"audio_seconds"] ?: @0,
+                                      @"progressSeconds" : read[@"progress_seconds"] ?: @0,
+                                      @"startedAt" : read[@"started_at"] ?: [NSNull null],
+                                      @"finishedAt" : read[@"finished_at"] ?: [NSNull null]
+                                  };
+
                                   if (completion)
-                                      completion(NO, error2);
+                                      completion(readData, nil);
                                   return;
                               }
-                              NSDictionary *data2 = [response2 isKindOfClass:[NSDictionary class]]
-                                                        ? response2[@"data"]
-                                                        : nil;
-                              NSArray      *users = [data2 isKindOfClass:[NSDictionary class]]
-                                                        ? data2[@"users"]
-                                                        : nil;
-                              if (![users isKindOfClass:[NSArray class]] || users.count == 0)
-                              {
-                                  if (completion)
-                                      completion(NO, [NSError errorWithDomain:@"HardcoverAPI"
-                                                                         code:404
-                                                                     userInfo:@{
-                                                                         NSLocalizedDescriptionKey :
-                                                                             @"User not found"
-                                                                     }]);
-                                  return;
-                              }
-                              NSDictionary *userObj = users.firstObject;
-                              NSArray      *userBooks =
-                                  [userObj[@"user_books"] isKindOfClass:[NSArray class]]
-                                           ? userObj[@"user_books"]
-                                           : @[];
-                              if (userBooks.count == 0)
-                              {
-                                  if (completion)
-                                      completion(NO, [NSError errorWithDomain:@"HardcoverAPI"
-                                                                         code:404
-                                                                     userInfo:@{
-                                                                         NSLocalizedDescriptionKey :
-                                                                             @"User book not found"
-                                                                     }]);
-                                  return;
-                              }
-                              NSDictionary *ub = userBooks.firstObject;
-                              NSNumber     *userBookId =
-                                  [ub[@"id"] isKindOfClass:[NSNumber class]] ? ub[@"id"] : nil;
-                              if (asin.length > 0 && userBookId && editionId)
-                              {
-                                  weakSelf.asinToIDs[asin] =
-                                      @{@"user_book_id" : userBookId, @"edition_id" : editionId};
-                              }
-                              performUpdate(userBookId, editionId);
-                          }];
+                          }
+                      }
+
+                      if (completion)
+                          completion(nil, nil);
+                  }
+                  @catch (NSException *exception)
+                  {
+
+                      NSError *parseError = [NSError
+                          errorWithDomain:@"HardcoverAPI"
+                                     code:500
+                                 userInfo:@{
+                                     NSLocalizedDescriptionKey :
+                                         [NSString stringWithFormat:@"Failed to parse response: %@",
+                                                                    exception.reason]
+                                 }];
+                      if (completion)
+                          completion(nil, parseError);
+                  }
               }];
+}
+
+- (void)findUserBookAndEditionForASIN:(NSString *)asin
+                           completion:(void (^)(NSDictionary *bookData, NSError *error))completion
+{
+    NSString *query = [NSString stringWithFormat:@"query FindBookByASIN { "
+                                                 @"me { "
+                                                 @"user_books { "
+                                                 @"id "
+                                                 @"book { "
+                                                 @"editions(where: {asin: {_eq: \"%@\"}}) { "
+                                                 @"id "
+                                                 @"asin "
+                                                 @"audio_seconds "
+                                                 @"} "
+                                                 @"} "
+                                                 @"} "
+                                                 @"} "
+                                                 @"}",
+                                                 asin];
+
+    [self
+        makeGraphQLRequest:query
+            withCompletion:^(NSDictionary *response, NSError *error) {
+                if (error)
+                {
+
+                    if (completion)
+                        completion(nil, error);
+                    return;
+                }
+
+                @try
+                {
+
+                    NSDictionary *data = response[@"data"];
+                    if (![data isKindOfClass:[NSDictionary class]])
+                    {
+                        if (completion)
+                            completion(nil, [NSError errorWithDomain:@"HardcoverAPI"
+                                                                code:500
+                                                            userInfo:@{
+                                                                NSLocalizedDescriptionKey :
+                                                                    @"Invalid response format"
+                                                            }]);
+                        return;
+                    }
+
+                    NSArray *users = data[@"users"];
+                    if (![users isKindOfClass:[NSArray class]] || users.count == 0)
+                    {
+                        if (completion)
+                            completion(nil, [NSError errorWithDomain:@"HardcoverAPI"
+                                                                code:404
+                                                            userInfo:@{
+                                                                NSLocalizedDescriptionKey :
+                                                                    @"User not found"
+                                                            }]);
+                        return;
+                    }
+
+                    NSDictionary *user      = users[0];
+                    NSArray      *userBooks = user[@"user_books"];
+
+                    if (![userBooks isKindOfClass:[NSArray class]])
+                    {
+                        if (completion)
+                            completion(nil, [NSError errorWithDomain:@"HardcoverAPI"
+                                                                code:500
+                                                            userInfo:@{
+                                                                NSLocalizedDescriptionKey :
+                                                                    @"Invalid user_books format"
+                                                            }]);
+                        return;
+                    }
+
+                    for (NSDictionary *userBook in userBooks)
+                    {
+                        if (![userBook isKindOfClass:[NSDictionary class]])
+                            continue;
+
+                        NSDictionary *book = userBook[@"book"];
+                        if (![book isKindOfClass:[NSDictionary class]])
+                            continue;
+
+                        NSArray *editions = book[@"editions"];
+                        if (![editions isKindOfClass:[NSArray class]])
+                            continue;
+
+                        for (NSDictionary *edition in editions)
+                        {
+                            if (![edition isKindOfClass:[NSDictionary class]])
+                                continue;
+
+                            NSString *editionAsin = edition[@"asin"];
+                            if ([editionAsin isEqualToString:asin])
+                            {
+
+                                NSDictionary *bookData = @{
+                                    @"userBookId" : userBook[@"id"],
+                                    @"editionId" : edition[@"id"],
+                                    @"audioSeconds" : edition[@"audio_seconds"] ?: @0
+                                };
+
+                                if (completion)
+                                    completion(bookData, nil);
+                                return;
+                            }
+                        }
+                    }
+
+                    if (completion)
+                        completion(nil,
+                                   [NSError errorWithDomain:@"HardcoverAPI"
+                                                       code:404
+                                                   userInfo:@{
+                                                       NSLocalizedDescriptionKey :
+                                                           @"Book with ASIN not found in library"
+                                                   }]);
+                }
+                @catch (NSException *exception)
+                {
+                    NSError *parseError = [NSError
+                        errorWithDomain:@"HardcoverAPI"
+                                   code:500
+                               userInfo:@{
+                                   NSLocalizedDescriptionKey : [NSString
+                                       stringWithFormat:@"Failed to parse book search response: %@",
+                                                        exception.reason]
+                               }];
+                    if (completion)
+                        completion(nil, parseError);
+                }
+            }];
+}
+
+- (void)insertUserBookRead:(NSNumber *)userBookId
+           progressSeconds:(NSInteger)seconds
+                 editionId:(NSNumber *)editionId
+                completion:(void (^)(NSDictionary *readData, NSError *error))completion
+{
+    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+    formatter.dateFormat       = @"yyyy-MM-dd";
+    NSString *startedAt        = [formatter stringFromDate:[NSDate date]];
+
+    NSString *mutation =
+        @"mutation InsertUserBookRead($userBookId: Int!, $object: user_book_reads_insert_input!) { "
+        @"insert_user_book_read(user_book_id: $userBookId, user_book_read: $object) { "
+        @"error "
+        @"user_book_read { "
+        @"id "
+        @"user_book_id "
+        @"progress_seconds "
+        @"edition_id "
+        @"started_at "
+        @"finished_at "
+        @"} "
+        @"} "
+        @"}";
+
+    NSDictionary *readObject = @{
+        @"progress_seconds" : @(seconds),
+        @"progress_pages" : @0,
+        @"edition_id" : editionId,
+        @"started_at" : startedAt,
+        @"finished_at" : [NSNull null],
+        @"reading_format_id" : @2
+    };
+
+    NSDictionary *variables = @{@"userBookId" : userBookId, @"object" : readObject};
+
+    [self makeGraphQLRequestWithQuery:mutation
+                            variables:variables
+                           completion:^(NSDictionary *response, NSError *error) {
+                               if (error)
+                               {
+                                   if (completion)
+                                       completion(nil, error);
+                                   return;
+                               }
+
+                               @try
+                               {
+                                   NSDictionary *data         = response[@"data"];
+                                   NSDictionary *insertResult = data[@"insert_user_book_read"];
+
+                                   if (insertResult && !insertResult[@"error"])
+                                   {
+                                       NSDictionary *newRead = insertResult[@"user_book_read"];
+                                       if (newRead)
+                                       {
+                                           NSDictionary *readData = @{
+                                               @"readId" : newRead[@"id"],
+                                               @"userBookId" : newRead[@"user_book_id"],
+                                               @"editionId" : newRead[@"edition_id"]
+                                           };
+
+                                           if (completion)
+                                               completion(readData, nil);
+                                       }
+                                       else
+                                       {
+                                           NSError *insertError = [NSError
+                                               errorWithDomain:@"HardcoverAPI"
+                                                          code:500
+                                                      userInfo:@{
+                                                          NSLocalizedDescriptionKey :
+                                                              @"No read data returned from insert"
+                                                      }];
+                                           if (completion)
+                                               completion(nil, insertError);
+                                       }
+                                   }
+                                   else
+                                   {
+                                       NSString *errorMsg =
+                                           insertResult[@"error"] ?: @"Insert failed";
+                                       NSError *insertError = [NSError
+                                           errorWithDomain:@"HardcoverAPI"
+                                                      code:500
+                                                  userInfo:@{NSLocalizedDescriptionKey : errorMsg}];
+                                       if (completion)
+                                           completion(nil, insertError);
+                                   }
+                               }
+                               @catch (NSException *exception)
+                               {
+                                   NSError *parseError = [NSError
+                                       errorWithDomain:@"HardcoverAPI"
+                                                  code:500
+                                              userInfo:@{
+                                                  NSLocalizedDescriptionKey : [NSString
+                                                      stringWithFormat:
+                                                          @"Failed to parse insert response: %@",
+                                                          exception.reason]
+                                              }];
+                                   if (completion)
+                                       completion(nil, parseError);
+                               }
+                           }];
+}
+
+- (void)updateExistingReadProgress:(NSNumber *)readId
+                   progressSeconds:(NSInteger)seconds
+                         editionId:(NSNumber *)editionId
+                         startedAt:(NSString *_Nullable)startedAt
+                        completion:(void (^)(BOOL success, NSError *error))completion
+{
+    NSString *mutation = @"mutation UpdateBookProgress($id: Int!, $object: DatesReadInput!) { "
+                         @"update_user_book_read(id: $id, object: $object) { "
+                         @"error "
+                         @"user_book_read { "
+                         @"id "
+                         @"progress "
+                         @"progress_seconds "
+                         @"progress_pages "
+                         @"edition_id "
+                         @"started_at "
+                         @"finished_at "
+                         @"} "
+                         @"} "
+                         @"}";
+
+    NSMutableDictionary *updateObject = [@{
+        @"progress_seconds" : @(seconds),
+        @"progress_pages" : @0,
+        @"edition_id" : editionId,
+        @"finished_at" : [NSNull null]
+    } mutableCopy];
+    if ([startedAt isKindOfClass:[NSString class]] && startedAt.length > 0)
+    {
+        updateObject[@"started_at"] = startedAt;
+    }
+    NSDictionary *variables = @{@"id" : readId, @"object" : updateObject};
+
+    [self makeGraphQLRequestWithQuery:mutation
+                            variables:variables
+                           completion:^(NSDictionary *response, NSError *error) {
+                               if (error)
+                               {
+                                   if (completion)
+                                       completion(NO, error);
+                                   return;
+                               }
+
+                               @try
+                               {
+                                   NSDictionary *data         = response[@"data"];
+                                   NSDictionary *updateResult = data[@"update_user_book_read"];
+
+                                   if (updateResult)
+                                   {
+                                       id errorValue = updateResult[@"error"];
+
+                                       BOOL hasError =
+                                           (errorValue && ![errorValue isEqual:[NSNull null]]);
+
+                                       if (hasError)
+                                       {
+                                       }
+
+                                       if (!hasError)
+                                       {
+                                           NSDictionary *updatedRead =
+                                               updateResult[@"user_book_read"];
+                                           if (updatedRead)
+                                           {
+                                               if (completion)
+                                                   completion(YES, nil);
+                                           }
+                                           else
+                                           {
+                                               NSError *updateError =
+                                                   [NSError errorWithDomain:@"HardcoverAPI"
+                                                                       code:500
+                                                                   userInfo:@{
+                                                                       NSLocalizedDescriptionKey :
+                                                                           @"No read data returned"
+                                                                   }];
+                                               if (completion)
+                                                   completion(NO, updateError);
+                                           }
+                                       }
+                                       else
+                                       {
+                                           NSString *errorMsg =
+                                               [NSString stringWithFormat:@"%@", errorValue];
+                                           NSError *updateError = [NSError
+                                               errorWithDomain:@"HardcoverAPI"
+                                                          code:500
+                                                      userInfo:@{
+                                                          NSLocalizedDescriptionKey : errorMsg
+                                                      }];
+                                           if (completion)
+                                               completion(NO, updateError);
+                                       }
+                                   }
+                                   else
+                                   {
+                                       NSError *updateError =
+                                           [NSError errorWithDomain:@"HardcoverAPI"
+                                                               code:500
+                                                           userInfo:@{
+                                                               NSLocalizedDescriptionKey :
+                                                                   @"No update result returned"
+                                                           }];
+                                       if (completion)
+                                           completion(NO, updateError);
+                                   }
+                               }
+                               @catch (NSException *exception)
+                               {
+                                   NSError *parseError =
+                                       [NSError errorWithDomain:@"HardcoverAPI"
+                                                           code:500
+                                                       userInfo:@{
+                                                           NSLocalizedDescriptionKey :
+                                                               @"Failed to parse update response"
+                                                       }];
+                                   if (completion)
+                                       completion(NO, parseError);
+                               }
+                           }];
 }
 
 - (void)markBookCompletedForASIN:(NSString *)asin
@@ -532,87 +1056,120 @@
                       completion:
                           (void (^_Nullable)(BOOL success, NSError *_Nullable error))completion
 {
-    [self updateListeningProgressForASIN:asin
-                         progressSeconds:totalSeconds
-                            totalSeconds:totalSeconds
-                              completion:completion];
-}
 
-- (void)makeGraphQLRequest:(NSString *)query
-            withCompletion:(void (^)(NSDictionary *response, NSError *error))completion
-{
-    NSURL               *url     = [NSURL URLWithString:@"https://api.hardcover.app/v1/graphql"];
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
-    [request setHTTPMethod:@"POST"];
-    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    if (_apiToken.length > 0)
-    {
-        [request setValue:[NSString stringWithFormat:@"Bearer %@", _apiToken]
-            forHTTPHeaderField:@"Authorization"];
-    }
+    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+    formatter.dateFormat       = @"yyyy-MM-dd";
+    NSString *finishedAt       = [formatter stringFromDate:[NSDate date]];
 
-    NSDictionary *body = @{@"query" : query};
-    NSError      *jsonError;
-    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:body options:0 error:&jsonError];
+    [self getLatestReadForASIN:asin
+                    completion:^(NSDictionary *readData, NSError *error) {
+                        if (error || !readData)
+                        {
+                            if (completion)
+                                completion(NO, error);
+                            return;
+                        }
 
-    if (jsonError)
-    {
-        if (completion)
-            completion(nil, jsonError);
-        return;
-    }
+                        NSNumber *readId    = readData[@"readId"];
+                        NSNumber *editionId = readData[@"editionId"];
 
-    [request setHTTPBody:jsonData];
+                        NSString *mutation = @"mutation MarkBookCompleted($id: Int!, $seconds: "
+                                             @"Int!, $editionId: Int!, $finishedAt: date!) { "
+                                             @"update_user_book_read(id: $id, object: { "
+                                             @"progress_seconds: $seconds, "
+                                             @"edition_id: $editionId, "
+                                             @"finished_at: $finishedAt "
+                                             @"}) { "
+                                             @"error "
+                                             @"user_book_read { "
+                                             @"id "
+                                             @"progress_seconds "
+                                             @"finished_at "
+                                             @"started_at "
+                                             @"edition_id "
+                                             @"} "
+                                             @"} "
+                                             @"}";
 
-    NSURLSessionDataTask *task = [[NSURLSession sharedSession]
-        dataTaskWithRequest:request
-          completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-              if (error)
-              {
-                  dispatch_async(dispatch_get_main_queue(), ^{
-                      if (completion)
-                          completion(nil, error);
-                  });
-                  return;
-              }
+                        NSDictionary *variables = @{
+                            @"id" : readId,
+                            @"seconds" : @(totalSeconds),
+                            @"editionId" : editionId,
+                            @"finishedAt" : finishedAt
+                        };
 
-              NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *) response;
-              if (httpResponse.statusCode != 200)
-              {
-                  NSError *httpError = [NSError
-                      errorWithDomain:@"HardcoverAPI"
-                                 code:httpResponse.statusCode
-                             userInfo:@{
-                                 NSLocalizedDescriptionKey : [NSString
-                                     stringWithFormat:@"HTTP %ld", (long) httpResponse.statusCode]
-                             }];
-                  dispatch_async(dispatch_get_main_queue(), ^{
-                      if (completion)
-                          completion(nil, httpError);
-                  });
-                  return;
-              }
+                        [self
+                            makeGraphQLRequestWithQuery:mutation
+                                              variables:variables
+                                             completion:^(NSDictionary *response, NSError *error) {
+                                                 if (error)
+                                                 {
+                                                     if (completion)
+                                                         completion(NO, error);
+                                                     return;
+                                                 }
 
-              NSError      *parseError;
-              NSDictionary *jsonResponse = [NSJSONSerialization JSONObjectWithData:data
-                                                                           options:0
-                                                                             error:&parseError];
+                                                 @try
+                                                 {
+                                                     NSDictionary *data = response[@"data"];
+                                                     NSDictionary *updateResult =
+                                                         data[@"update_user_book_read"];
 
-              dispatch_async(dispatch_get_main_queue(), ^{
-                  if (parseError)
-                  {
-                      if (completion)
-                          completion(nil, parseError);
-                  }
-                  else
-                  {
-                      if (completion)
-                          completion(jsonResponse, nil);
-                  }
-              });
-          }];
+                                                     if (updateResult[@"error"] &&
+                                                         ![updateResult[@"error"]
+                                                             isKindOfClass:[NSNull class]])
+                                                     {
+                                                         NSString *errorMsg =
+                                                             updateResult[@"error"];
+                                                         NSError *updateError = [NSError
+                                                             errorWithDomain:@"HardcoverAPI"
+                                                                        code:400
+                                                                    userInfo:@{
+                                                                        NSLocalizedDescriptionKey :
+                                                                            errorMsg
+                                                                    }];
+                                                         if (completion)
+                                                             completion(NO, updateError);
+                                                         return;
+                                                     }
 
-    [task resume];
+                                                     NSDictionary *completedRead =
+                                                         updateResult[@"user_book_read"];
+                                                     if (completedRead)
+                                                     {
+                                                         if (completion)
+                                                             completion(YES, nil);
+                                                     }
+                                                     else
+                                                     {
+                                                         NSError *updateError = [NSError
+                                                             errorWithDomain:@"HardcoverAPI"
+                                                                        code:500
+                                                                    userInfo:@{
+                                                                        NSLocalizedDescriptionKey :
+                                                                            @"No completion "
+                                                                            @"data "
+                                                                            @"returned"
+                                                                    }];
+                                                         if (completion)
+                                                             completion(NO, updateError);
+                                                     }
+                                                 }
+                                                 @catch (NSException *exception)
+                                                 {
+                                                     NSError *parseError = [NSError
+                                                         errorWithDomain:@"HardcoverAPI"
+                                                                    code:500
+                                                                userInfo:@{
+                                                                    NSLocalizedDescriptionKey :
+                                                                        @"Failed to parse "
+                                                                        @"completion response"
+                                                                }];
+                                                     if (completion)
+                                                         completion(NO, parseError);
+                                                 }
+                                             }];
+                    }];
 }
 
 - (void)saveToken:(NSString *)token

@@ -45,6 +45,13 @@ NS_ASSUME_NONNULL_BEGIN
 						  totalSeconds:(NSInteger)totalSeconds
 							  completion:(void (^ _Nullable)(BOOL success, NSError * _Nullable error))completion;
 
+- (void)getLatestReadForASIN:(nonnull NSString *)asin
+				   completion:(void (^ _Nullable)(NSDictionary * _Nullable readData, NSError * _Nullable error))completion;
+
+- (void)makeGraphQLRequestWithQuery:(nonnull NSString *)query
+                          variables:(nullable NSDictionary *)variables
+                         completion:(void (^ _Nullable)(NSDictionary * _Nullable response, NSError * _Nullable error))completion;
+
 @end
 
 NS_ASSUME_NONNULL_END
