@@ -141,7 +141,7 @@ jobs:
         run: pip install --force-reinstall https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip Pillow
 
       - name: Inject tweak
-        run:  cyan -duwsgq -i audible.ipa -o ${{ env.APP_NAME }}.ipa -f *.deb
+        run:  yes | cyan -duwsgq -i audible.ipa -o ${{ env.APP_NAME }}.ipa -f *.deb
 
       - name: Upload ipa as artifact
         id: upload-ipa
