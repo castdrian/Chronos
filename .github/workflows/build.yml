@@ -19,7 +19,6 @@ permissions:
 
 env:
   GH_TOKEN: ${{ github.token }}
-  APP_NAME: Audible
 
 jobs:
   build-tweak:
@@ -37,7 +36,6 @@ jobs:
           submodules: recursive
 
       - name: Download Tweak
-        if: inputs.caller_workflow != 'ci'
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 5
@@ -129,6 +127,11 @@ jobs:
         with:
           merge-multiple: true
 
+      - name: Extract app name
+        run: |
+          NAME=$(grep '^Name:' control | cut -d ' ' -f 2)
+          echo "APP_NAME=$NAME" >> $GITHUB_ENV
+
       - name: Download Audible ipa
         uses: nick-fields/retry@v3
         with:
@@ -155,7 +158,7 @@ jobs:
         run: echo "filename=${{ env.APP_NAME }}.ipa" >> $GITHUB_OUTPUT
 
   release-app:
-    if: inputs.caller_workflow != 'ci' && inputs.release == true
+    if: inputs.release == true
     runs-on: macos-15
     needs: [build-tweak, build-ipa]
     outputs:
@@ -197,7 +200,7 @@ jobs:
           echo "assets=$ASSETS" >> $GITHUB_OUTPUT
 
   app-repo:
-    if: inputs.caller_workflow != 'ci' && inputs.release == true
+    if: inputs.release == true
     continue-on-error: true
     runs-on: macos-15
     needs: release-app
@@ -217,7 +220,7 @@ jobs:
           VERSION=$(plutil -p Payload/Audible.app/Info.plist | grep CFBundleShortVersionString | cut -d '"' -f 4)
           APP_INDEX=0
 
-          NAME=Audible
+          NAME=$(grep '^Name:' control | cut -d ' ' -f 2)
           DATE=$(date -u +"%Y-%m-%d")
           IPA_SIZE=$(stat -f %z "$APP_FILE")
           DOWNLOAD_URL=https://github.com/${{ github.repository }}/releases/download/v$VERSION/$NAME.ipa

@@ -1,4 +1,4 @@
-#import "ChronosMenuViewController.h"
+#import "ChronosMenu.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -9,9 +9,9 @@ extern double          totalBookDuration;
 }
 #endif
 
-@interface ChronosMenuViewController () <SFSafariViewControllerDelegate>
-@property (nonatomic, strong) UIScrollView            *rootScroll;
-@property (nonatomic, strong) UIStackView             *rootStack;
+@interface                                  ChronosMenu () <SFSafariViewControllerDelegate>
+@property (nonatomic, strong) UIScrollView *rootScroll;
+@property (nonatomic, strong) UIStackView  *rootStack;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) UILabel                 *titleLabel;
 @property (nonatomic, strong) UILabel                 *authorLabel;
@@ -47,7 +47,7 @@ extern double          totalBookDuration;
 @property (nonatomic, strong) NSDictionary            *currentlyDisplayedAudibleData;
 @end
 
-@implementation ChronosMenuViewController
+@implementation ChronosMenu
 
 - (void)viewDidLoad
 {
@@ -1244,8 +1244,6 @@ extern double          totalBookDuration;
     [self configureSheetPresentation];
 }
 
-#pragma mark - Currently Reading UI
-
 - (void)loadCurrentlyReadingForUser:(HardcoverUser *)user
 {
     if (!user || !user.userId)
@@ -1462,7 +1460,7 @@ extern double          totalBookDuration;
         }
         if (matchesASIN || matchesContent)
         {
-            [ChronosEffects applySubtleGreenGlowToLayer:pill.layer];
+            [Utilities applySubtleGreenGlowToLayer:pill.layer];
         }
 
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -1493,11 +1491,11 @@ extern double          totalBookDuration;
                 titleCenterC.active          = NO;
                 titleLeadingC.active         = YES;
                 scrollingLabel.textAlignment = NSTextAlignmentLeft;
-                [ChronosMarquee startContinuousMarqueeIn:titleMarquee
-                                             contentView:scrollingLabel
-                                            contentWidth:labelWidth
-                                           viewportWidth:marqueeWidth
-                                                     gap:24.0];
+                [Utilities startContinuousMarqueeIn:titleMarquee
+                                        contentView:scrollingLabel
+                                       contentWidth:labelWidth
+                                      viewportWidth:marqueeWidth
+                                                gap:24.0];
             }
         });
     }
@@ -1607,14 +1605,10 @@ extern double          totalBookDuration;
     [self.navigationController presentViewController:safari animated:YES completion:nil];
 }
 
-#pragma mark - SFSafariViewControllerDelegate
-
 - (void)safariViewControllerDidFinish:(SFSafariViewController *)controller
 {
     [controller dismissViewControllerAnimated:YES completion:nil];
 }
-
-#pragma mark - Hardcover data comparison helpers
 
 - (HardcoverUser *)copyUser:(HardcoverUser *)user
 {
@@ -1690,8 +1684,6 @@ extern double          totalBookDuration;
     return [arr1 isEqualToArray:arr2];
 }
 
-#pragma mark - Hardcover cache helpers
-
 - (void)saveCachedHardcoverUser:(HardcoverUser *)user
 {
     [self saveCachedHardcoverUser:user withCurrentlyReadingItems:nil];
@@ -1750,8 +1742,6 @@ extern double          totalBookDuration;
 
     return user;
 }
-
-#pragma mark - Audible cache helpers
 
 - (void)saveCachedAudibleData:(NSDictionary *)audibleData
 {

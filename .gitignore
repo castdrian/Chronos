@@ -1,5 +1,5 @@
 *.ipa
 .theos
-.venv
 .DS_Store
 packages
+venv

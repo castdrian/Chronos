@@ -1,5 +1,5 @@
-#import "ChronosMenuViewController.h"
-#import "Menu.h"
+#import "ChronosMenu.h"
+#import "Sheet.h"
 
 static NSHashTable *chronosWindowsWithGestures = nil;
 
@@ -54,13 +54,13 @@ static void addChronosGestureToWindow(UIWindow *window)
         }
         if (keyWindow && keyWindow.rootViewController)
         {
-            ShowChronosMenuSheet(keyWindow.rootViewController);
+            showChronosMenuSheet(keyWindow.rootViewController);
         }
     }
 }
 %end
 
-void ShowChronosMenuSheet(UIViewController *presentingVC)
+void showChronosMenuSheet(UIViewController *presentingVC)
 {
     UIWindowScene *activeScene = nil;
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes)
@@ -81,8 +81,8 @@ void ShowChronosMenuSheet(UIViewController *presentingVC)
     rootVC.view.backgroundColor  = [UIColor clearColor];
     topWindow.rootViewController = rootVC;
     [topWindow makeKeyAndVisible];
-    ChronosMenuViewController *menuVC = [[ChronosMenuViewController alloc] init];
-    UINavigationController    *navController =
+    ChronosMenu            *menuVC = [[ChronosMenu alloc] init];
+    UINavigationController *navController =
         [[UINavigationController alloc] initWithRootViewController:menuVC];
     navController.modalPresentationStyle = UIModalPresentationPageSheet;
     if (@available(iOS 15.0, *))
@@ -93,7 +93,7 @@ void ShowChronosMenuSheet(UIViewController *presentingVC)
             sheet.detents               = @[ [UISheetPresentationControllerDetent mediumDetent] ];
             sheet.prefersGrabberVisible = YES;
             sheet.prefersScrollingExpandsWhenScrolledToEdge = YES;
-            sheet.preferredCornerRadius    = 16.0;
+            sheet.preferredCornerRadius                     = 16.0;
             sheet.selectedDetentIdentifier = UISheetPresentationControllerDetentIdentifierMedium;
         }
     }
@@ -105,8 +105,7 @@ void ShowChronosMenuSheet(UIViewController *presentingVC)
     [rootVC presentViewController:navController animated:YES completion:nil];
     objc_setAssociatedObject(navController, "chronosTopWindow", topWindow,
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    Method dismissMethod =
-        class_getInstanceMethod([ChronosMenuViewController class], @selector(dismiss));
+    Method dismissMethod = class_getInstanceMethod([ChronosMenu class], @selector(dismiss));
     method_setImplementation(
         dismissMethod, imp_implementationWithBlock(^(id _self) {
             [_self dismissViewControllerAnimated:YES

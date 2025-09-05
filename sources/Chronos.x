@@ -1,5 +1,4 @@
 #import "Chronos.h"
-#import "HardcoverAPI.h"
 
 NSString *currentASIN      = nil;
 NSString *currentContentID = nil;
@@ -183,18 +182,19 @@ static NSInteger lastLoggedChapter = -1;
                                     completion:^(BOOL success, NSError *error) {
                                         if (!success)
                                         {
-                                            NSLog(
-                                                @"[Chronos] Progress update failed for ASIN %@: %@",
-                                                currentASIN,
-                                                error ? error.localizedDescription
-                                                      : @"Unknown error");
+                                            [Logger error:LOG_CATEGORY_HARDCOVER
+                                                   format:@"Progress update failed for ASIN %@: %@",
+                                                          currentASIN,
+                                                          error ? error.localizedDescription
+                                                                : @"Unknown error"];
                                         }
                                     }];
         }
     }
     @catch (__unused NSException *e)
     {
-        NSLog(@"[Chronos] Exception in calculateBookProgress: %@", e.description);
+        [Logger error:LOG_CATEGORY_UTILITIES
+               format:@"Exception in calculateBookProgress: %@", e.description];
     }
 }
 
@@ -229,9 +229,11 @@ static NSInteger lastLoggedChapter = -1;
                                           completion:^(BOOL success, NSError *error) {
                                               if (!success)
                                               {
-                                                  NSLog(@"[Chronos] Failed to mark book "
-                                                        @"completed for ASIN %@: %@",
-                                                        currentASIN, error.localizedDescription);
+                                                  [Logger error:LOG_CATEGORY_HARDCOVER
+                                                         format:@"Failed to mark book completed "
+                                                                @"for ASIN %@: %@",
+                                                                currentASIN,
+                                                                error.localizedDescription];
                                               }
                                           }];
                     }
@@ -240,7 +242,8 @@ static NSInteger lastLoggedChapter = -1;
         }
         @catch (__unused NSException *e)
         {
-            NSLog(@"[Chronos] Exception in progress update: %@", e.description);
+            [Logger error:LOG_CATEGORY_UTILITIES
+                   format:@"Exception in progress update: %@", e.description];
         }
     }
     %orig;
@@ -290,5 +293,5 @@ static NSInteger lastLoggedChapter = -1;
 
 %ctor
 {
-    NSLog(@"[Chronos] Tweak initialized");
+    [Logger notice:LOG_CATEGORY_DEFAULT format:@"Tweak initialized"];
 }

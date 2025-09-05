@@ -420,8 +420,6 @@
               }];
 }
 
-#pragma mark - Progress Updates
-
 - (void)updateListeningProgressForASIN:(NSString *)asin
                        progressSeconds:(NSInteger)seconds
                           totalSeconds:(NSInteger)totalSeconds
