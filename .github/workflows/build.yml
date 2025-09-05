@@ -217,7 +217,7 @@ jobs:
           VERSION=$(plutil -p Payload/Audible.app/Info.plist | grep CFBundleShortVersionString | cut -d '"' -f 4)
           APP_INDEX=0
 
-          NAME=$(grep '^Name:' control | cut -d ' ' -f 2)
+          NAME=Audible
           DATE=$(date -u +"%Y-%m-%d")
           IPA_SIZE=$(stat -f %z "$APP_FILE")
           DOWNLOAD_URL=https://github.com/${{ github.repository }}/releases/download/v$VERSION/$NAME.ipa
