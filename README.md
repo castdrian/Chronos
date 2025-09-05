@@ -16,7 +16,7 @@ Sync Audible progress to Hardcover.
 <a href="https://tinyurl.com/chronos-sidestore"><img src="https://adriancastro.dev/basmxxk8sj3k.png" width="230"></a>
 
 > [!WARNING]
-> When sideloading Audible it would appear that only streaming content works. Downloads don't seem to function properly. I recommend using LiveContainer if you want to download audiobooks for offline listening.
+> When sideloading Audible it would appear that only streaming content works. Downloads don't seem to function properly. I recommend using [LiveContainer](https://github.com/LiveContainer/LiveContainer) if you want to download audiobooks for offline listening.
 
 - Download and install [Audible.ipa](https://github.com/castdrian/Chronos/releases/latest/download/Audible.ipa) using your preferred sideloading method.
 
