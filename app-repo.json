@@ -17,6 +17,13 @@
       "tintColor": "#ff9700",
       "category": "entertainment",
       "versions": [
+        {
+          "version": "4.52",
+          "date": "2025-09-05",
+          "size": 51558773,
+          "downloadURL": "https://github.com/castdrian/Chronos/releases/download/v4.52/Chronos.ipa",
+          "localizedDescription": "Further improvements to overall system stability and other minor adjustments have been made to enhance the user experience."
+        }
       ]
     }
   ]
