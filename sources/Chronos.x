@@ -79,13 +79,14 @@ static NSInteger lastLoggedChapter = -1;
     }
 }
 
-+ (void)captureChapterIfNeeded:(id)object withContext:(NSString *)context
++ (void)captureMetadataFromObject:(id)object withContext:(NSString *)context
 {
     if (!object)
         return;
     @try
     {
-        if ([NSStringFromClass([object class]) isEqualToString:@"AudiblePlayer.Chapter"])
+        NSString *classNameStr = NSStringFromClass([object class]);
+        if ([classNameStr isEqualToString:@"AudiblePlayer.Chapter"])
         {
             [self processChapterData:object withContext:context];
         }
@@ -209,6 +210,29 @@ static NSInteger lastLoggedChapter = -1;
         }
     }
     %orig;
+}
+
+%end
+
+%hook NSObject
+
+- (instancetype)init
+{
+    id    result      = %orig;
+    Class resultClass = object_getClass(result);
+    if (resultClass)
+    {
+        const char *className = class_getName(resultClass);
+        if (className)
+        {
+            NSString *classNameStr = [NSString stringWithUTF8String:className];
+            if ([AudibleMetadataCapture isSafeClassForKVC:classNameStr])
+            {
+                [AudibleMetadataCapture captureMetadataFromObject:result withContext:@"init"];
+            }
+        }
+    }
+    return result;
 }
 
 %end
