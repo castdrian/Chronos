@@ -1,11 +1,14 @@
 name: Build Chronos
-run-name: ${{ inputs.release == true && 'Release' || 'Build' }} for ${{ inputs.ipa_url }}
+run-name: >-
+  ${{ github.event_name == 'push' && 'Push Build' || (inputs.release == true && 'Release' || 'Build') }}
 
 on:
+  push:
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       ipa_url:
-        default: ""
+        default: "https://files.catbox.moe/itm7dw.ipa"
         description: "Direct link to the decrypted ipa"
         required: true
         type: string
@@ -21,8 +24,73 @@ env:
   GH_TOKEN: ${{ github.token }}
 
 jobs:
+  precheck:
+    runs-on: macos-15
+    outputs:
+      should_run: ${{ steps.version-check.outputs.should_run }}
+      do_release: ${{ steps.version-check.outputs.do_release }}
+      ipa_url: ${{ steps.set-ipa-url.outputs.ipa_url }}
+      reuse_deb: ${{ steps.version-check.outputs.reuse_deb }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set IPA URL (dispatch or default)
+        id: set-ipa-url
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "ipa_url=${{ inputs.ipa_url }}" >> $GITHUB_OUTPUT
+          else
+            # fallback default for push builds
+            echo "ipa_url=https://files.catbox.moe/itm7dw.ipa" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Compare tweak version with latest release
+        id: version-check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CONTROL_VERSION=$(grep '^Version:' control | cut -d ' ' -f 2)
+          SHOULD_RUN=true
+          DO_RELEASE=false
+          REUSE_DEB=false
+          # Fetch latest release (if any) once
+          set +e
+          release_json=$(gh api repos/${{ github.repository }}/releases/latest 2>/dev/null)
+          rc=$?
+          set -e
+          RELEASE_VERSION=""
+          if [ $rc -eq 0 ]; then
+            asset_name=$(echo "$release_json" | jq -r '.assets[] | select(.name | contains("iphoneos-arm64.deb")) | .name' | head -n1)
+            if [ -n "$asset_name" ]; then
+              RELEASE_VERSION=$(echo "$asset_name" | grep -o '_[0-9.]\+_' | tr -d '_')
+            fi
+          fi
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # For manual dispatch we may want to reuse existing DEB if version matches
+            if [ -n "$RELEASE_VERSION" ] && [ "$RELEASE_VERSION" = "$CONTROL_VERSION" ]; then
+              REUSE_DEB=true
+            fi
+            if [ "${{ inputs.release }}" = "true" ]; then DO_RELEASE=true; fi
+          else
+            # push event logic: skip entire build if version already released
+            if [ -n "$RELEASE_VERSION" ] && [ "$RELEASE_VERSION" = "$CONTROL_VERSION" ]; then
+              echo "Latest release version ($RELEASE_VERSION) matches control ($CONTROL_VERSION); skipping build on push.";
+              SHOULD_RUN=false
+            else
+              DO_RELEASE=true
+            fi
+          fi
+          echo "should_run=$SHOULD_RUN" >> $GITHUB_OUTPUT
+          echo "do_release=$DO_RELEASE" >> $GITHUB_OUTPUT
+          echo "reuse_deb=$REUSE_DEB" >> $GITHUB_OUTPUT
+          echo "Control version: $CONTROL_VERSION (release? $DO_RELEASE, run? $SHOULD_RUN)"
+
   build-tweak:
     runs-on: macos-15
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
     outputs:
       deb_url: ${{ steps.upload-deb.outputs.artifact-url }}
       deb_filename: ${{ steps.set-deb-filename.outputs.filename }}
@@ -35,40 +103,17 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Download Tweak
-        uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 5
-          max_attempts: 3
-          retry_wait_seconds: 10
-          command: |
-            set +e
-
-            release_info=$(gh api --header 'Accept: application/vnd.github+json' repos/${{ github.repository }}/releases/latest)
-            status_code=$(echo $release_info | jq -r ".status")
-
-            if [ "$status_code" != "null" ]; then
-              echo "No releases found or request failed, status code: $status_code"
-              echo "DEB_DOWNLOADED=false" >> $GITHUB_ENV
-              exit 0
-            fi
-
-            set -e
-
-            release_version=$(echo "$release_info" | jq -r '.assets[] | select(.name | contains("iphoneos-arm64.deb")) | .name' | grep -o '_[0-9.]\+_' | tr -d '_')
-            control_version=$(grep '^Version:' control | cut -d ' ' -f 2)
-
-            if [ "$release_version" = "$control_version" ]; then
-              echo "Versions match. Downloading DEB files..."
-              mkdir -p packages
-              cd packages
-              echo "$release_info" | jq -r '.assets[] | select(.name | endswith("arm64.deb")) | .browser_download_url' | xargs -I {} curl -L -O {}
-              echo "DEB_DOWNLOADED=true" >> $GITHUB_ENV
-            else
-              echo "Versions do not match. No files will be downloaded."
-              echo "DEB_DOWNLOADED=false" >> $GITHUB_ENV
-              exit 0
-            fi
+      - name: Reuse existing DEB from latest release
+        if: needs.precheck.outputs.reuse_deb == 'true'
+        run: |
+          echo "Reusing existing release assets (version matches control)."
+          release_info=$(gh api --header 'Accept: application/vnd.github+json' repos/${{ github.repository }}/releases/latest)
+          mkdir -p packages
+          cd packages
+          echo "$release_info" | jq -r '.assets[] | select(.name | endswith("arm64.deb")) | .browser_download_url' | while read url; do
+            [ -n "$url" ] && curl -L -O "$url";
+          done
+          echo "DEB_DOWNLOADED=true" >> $GITHUB_ENV
 
       - name: Check cache
         if: env.DEB_DOWNLOADED == 'false'
@@ -106,7 +151,8 @@ jobs:
 
   build-ipa:
     runs-on: macos-15
-    needs: build-tweak
+    needs: [precheck, build-tweak]
+    if: needs.precheck.outputs.should_run == 'true'
     outputs:
       ipa_url: ${{ steps.upload-ipa.outputs.artifact-url }}
       ipa_filename: ${{ steps.set-ipa-filename.outputs.filename }}
@@ -138,7 +184,7 @@ jobs:
           timeout_minutes: 10
           max_attempts: 3
           retry_wait_seconds: 15
-          command: curl -L -o audible.ipa ${{ inputs.ipa_url }}
+          command: curl -L -o audible.ipa ${{ needs.precheck.outputs.ipa_url }}
 
       - name: Install cyan
         run: pip install --force-reinstall https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip Pillow
@@ -158,9 +204,9 @@ jobs:
         run: echo "filename=${{ env.APP_NAME }}.ipa" >> $GITHUB_OUTPUT
 
   release-app:
-    if: inputs.release == true
+    if: needs.precheck.outputs.do_release == 'true'
     runs-on: macos-15
-    needs: [build-tweak, build-ipa]
+    needs: [precheck, build-tweak, build-ipa]
     outputs:
       assets: ${{ steps.release_outputs.outputs.assets }}
 
@@ -178,6 +224,24 @@ jobs:
           unzip -q *.ipa
           VERSION=$(plutil -p Payload/Audible.app/Info.plist | grep CFBundleShortVersionString | cut -d '"' -f 4)
           echo "AUDIBLE_VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Delete existing release/tag
+        id: delete_existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          existing=$(gh release view v${{ env.AUDIBLE_VERSION }} --json id,tagName 2>/dev/null)
+          rc=$?
+          set -e
+          if [ $rc -eq 0 ]; then
+            rid=$(echo "$existing" | jq -r '.id')
+            echo "Found existing release for version ${AUDIBLE_VERSION} (id $rid); deleting..."
+            gh release delete v${AUDIBLE_VERSION} -y || true
+            git push origin :refs/tags/v${AUDIBLE_VERSION} || true
+          else
+            echo "No existing release/tag for v${AUDIBLE_VERSION}";
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -200,10 +264,10 @@ jobs:
           echo "assets=$ASSETS" >> $GITHUB_OUTPUT
 
   app-repo:
-    if: inputs.release == true
+    if: needs.precheck.outputs.do_release == 'true'
     continue-on-error: true
     runs-on: macos-15
-    needs: release-app
+    needs: [precheck, release-app]
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -228,10 +292,10 @@ jobs:
           
           VERSION_EXISTS=$(jq --arg version "$VERSION" --argjson index "$APP_INDEX" '.apps[$index].versions | map(select(.version == $version)) | length' app-repo.json)
           if [ "$VERSION_EXISTS" -gt 0 ]; then
-            jq --argjson newEntry "$NEW_ENTRY" --argjson index "$APP_INDEX" --arg version "$VERSION" '.apps[$index].versions |= map(if .version == $version then $newEntry else . end)' app-repo.json > temp.json
-          else
-            jq --argjson newEntry "$NEW_ENTRY" --argjson index "$APP_INDEX" '.apps[$index].versions |= [$newEntry] + .' app-repo.json > temp.json
+            echo "Version $VERSION already present in app-repo.json – skipping update.";
+            exit 0
           fi
+          jq --argjson newEntry "$NEW_ENTRY" --argjson index "$APP_INDEX" '.apps[$index].versions |= [$newEntry] + .' app-repo.json > temp.json
           mv temp.json app-repo.json
 
       - uses: EndBug/add-and-commit@v9
@@ -241,9 +305,9 @@ jobs:
           add: app-repo.json
 
   apt-repo:
-    if: inputs.caller_workflow != 'ci' && inputs.release == true
+    if: needs.precheck.outputs.do_release == 'true'
     runs-on: macos-15
-    needs: [build-tweak, release-app]
+    needs: [precheck, build-tweak, release-app]
     steps:
       - name: Update Repository
         uses: actions/github-script@v7

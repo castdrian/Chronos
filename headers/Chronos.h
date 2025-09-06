@@ -1,4 +1,6 @@
 #import <MediaPlayer/MediaPlayer.h>
+#import <CoreData/CoreData.h>
+#import <objc/runtime.h>
 #import "HardcoverAPI.h"
 #import "Logger.h"
 

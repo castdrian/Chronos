@@ -1,7 +1,6 @@
 #import "Chronos.h"
 
-NSString *currentASIN      = nil;
-NSString *currentContentID = nil;
+NSString *currentASIN = nil;
 
 NSMutableArray  *allChapters       = nil;
 double           totalBookDuration = 0.0;
@@ -21,7 +20,6 @@ static NSInteger lastLoggedChapter = -1;
         allChapters       = [[NSMutableArray alloc] init];
         totalBookDuration = 0.0;
         currentASIN       = nil;
-        currentContentID  = nil;
     }
 }
 
@@ -81,51 +79,15 @@ static NSInteger lastLoggedChapter = -1;
     }
 }
 
-+ (void)captureMetadataFromObject:(id)object withContext:(NSString *)context
++ (void)captureChapterIfNeeded:(id)object withContext:(NSString *)context
 {
     if (!object)
         return;
     @try
     {
-        NSString *classNameStr = NSStringFromClass([object class]);
-        if ([classNameStr isEqualToString:@"AudiblePlayer.Chapter"])
+        if ([NSStringFromClass([object class]) isEqualToString:@"AudiblePlayer.Chapter"])
         {
             [self processChapterData:object withContext:context];
-        }
-        if ([self isSafeClassForKVC:classNameStr])
-        {
-            [self scanObjectForIdentifiers:object inClass:classNameStr];
-        }
-    }
-    @catch (__unused NSException *e)
-    {
-    }
-}
-
-+ (void)scanObjectForIdentifiers:(id)object inClass:(NSString *)className
-{
-    if (![self isSafeClassForKVC:className])
-        return;
-    @try
-    {
-        if ([className isEqualToString:@"Audible.RemoteSubscriptionDetail"] ||
-            [className isEqualToString:@"AudibleAssetRepo.AssetMetadata"])
-        {
-            NSString *asinValue = nil;
-            @try
-            {
-                asinValue = [object valueForKey:@"asin"];
-            }
-            @catch (__unused NSException *e)
-            {
-            }
-            if (asinValue && [asinValue isKindOfClass:[NSString class]])
-            {
-                if ([className isEqualToString:@"Audible.RemoteSubscriptionDetail"])
-                    currentASIN = asinValue;
-                if ([className isEqualToString:@"AudibleAssetRepo.AssetMetadata"])
-                    currentContentID = asinValue;
-            }
         }
     }
     @catch (__unused NSException *e)
@@ -251,44 +213,53 @@ static NSInteger lastLoggedChapter = -1;
 
 %end
 
-%hook NSObject
-
-- (instancetype)init
+%hook NSManagedObjectContext
+- (NSArray *)executeFetchRequest:(NSFetchRequest *)request error:(NSError **)error
 {
-    id    result      = %orig;
-    Class resultClass = object_getClass(result);
-    if (resultClass)
+    NSArray *res = %orig;
+    @try
     {
-        const char *className = class_getName(resultClass);
-        if (className)
+        if (!request || ![request isKindOfClass:[NSFetchRequest class]])
+            return res;
+        if (![res isKindOfClass:[NSArray class]] || res.count != 1)
+            return res;
+        NSString *entityName = nil;
+        if ([request respondsToSelector:@selector(entityName)])
+            entityName = request.entityName;
+        if (![entityName isEqualToString:@"DBItem"])
+            return res;
+        NSPredicate *pred = request.predicate;
+        if (!pred)
+            return res;
+        NSString *format = pred.predicateFormat;
+        if (format.length == 0)
+            return res;
+        if ([format rangeOfString:@" OR "].location != NSNotFound ||
+            [format rangeOfString:@" IN "].location != NSNotFound)
+            return res;
+        NSRange keyRange = [format rangeOfString:@"asin == \""];
+        if (keyRange.location == NSNotFound)
+            return res;
+        NSUInteger startIdx = NSMaxRange(keyRange);
+        if (startIdx >= format.length)
+            return res;
+        NSRange rest     = NSMakeRange(startIdx, format.length - startIdx);
+        NSRange endQuote = [format rangeOfString:@"\"" options:0 range:rest];
+        if (endQuote.location == NSNotFound || endQuote.location <= startIdx)
+            return res;
+        NSString *asin =
+            [format substringWithRange:NSMakeRange(startIdx, endQuote.location - startIdx)];
+        if (asin.length && ![asin isEqualToString:currentASIN])
         {
-            NSString *classNameStr = [NSString stringWithUTF8String:className];
-            if ([AudibleMetadataCapture isSafeClassForKVC:classNameStr])
-            {
-                [AudibleMetadataCapture captureMetadataFromObject:result withContext:@"init"];
-            }
+            currentASIN = asin;
+            [Logger notice:LOG_CATEGORY_DEFAULT format:@"ASIN => %@", asin];
         }
     }
-    return result;
-}
-
-- (id)valueForKey:(NSString *)key
-{
-    id result = %orig;
-    if (result && [result isKindOfClass:[NSString class]])
+    @catch (__unused NSException *e)
     {
-        NSString *className = NSStringFromClass([self class]);
-        if ([key isEqualToString:@"asin"])
-        {
-            if ([className isEqualToString:@"Audible.RemoteSubscriptionDetail"])
-                currentASIN = result;
-            if ([className isEqualToString:@"AudibleAssetRepo.AssetMetadata"])
-                currentContentID = result;
-        }
     }
-    return result;
+    return res;
 }
-
 %end
 
 %ctor

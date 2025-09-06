@@ -20,6 +20,10 @@ Sync Audible progress to Hardcover.
 
 - Download and install [Audible.ipa](https://github.com/castdrian/Chronos/releases/latest/download/Audible.ipa) using your preferred sideloading method.
 
+## Credits
+
+- Thanks to [@dayanch96](https://github.com/dayanch96) for the `INVocabulary` hook
+
 ## Contributors
 
 [![Contributors](https://contrib.rocks/image?repo=castdrian/Chronos)](https://github.com/castdrian/Chronos/graphs/contributors)

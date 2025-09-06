@@ -17,11 +17,8 @@ extern double          totalBookDuration;
 @property (nonatomic, strong) UILabel                 *authorLabel;
 @property (nonatomic, strong) UILabel                 *progressLabel;
 @property (nonatomic, strong) UIView                  *asinBlock;
-@property (nonatomic, strong) UIView                  *contentIdBlock;
 @property (nonatomic, strong) UILabel                 *asinLabel;
-@property (nonatomic, strong) UILabel                 *contentIdLabel;
 @property (nonatomic, strong) UIButton                *asinCopyButton;
-@property (nonatomic, strong) UIButton                *contentIdCopyButton;
 @property (nonatomic, strong) UIView                  *hardcoverSection;
 @property (nonatomic, strong) UILabel                 *hardcoverHeaderLabel;
 @property (nonatomic, strong) UITextField             *apiTokenField;
@@ -169,8 +166,8 @@ extern double          totalBookDuration;
     ]];
 
     self.titleLabel               = [self labelWithFont:blockFont weight:UIFontWeightSemibold];
-    self.titleLabel.numberOfLines = 2;
-    self.titleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    self.titleLabel.numberOfLines = 0;
+    self.titleLabel.lineBreakMode = NSLineBreakByWordWrapping;
     self.authorLabel              = [self labelWithFont:13 weight:UIFontWeightRegular];
     self.progressLabel            = [self labelWithFont:13 weight:UIFontWeightRegular];
     self.authorLabel.textColor    = UIColor.secondaryLabelColor;
@@ -187,16 +184,6 @@ extern double          totalBookDuration;
     self.asinLabel           = asinLabel;
     self.asinCopyButton      = asinCopyButton;
 
-    UILabel  *contentIdLabel      = nil;
-    UIButton *contentIdCopyButton = nil;
-    UILabel  *contentIdTitleLabel = [self labelWithFont:13 weight:UIFontWeightSemibold];
-    contentIdTitleLabel.text      = @"Content ID:";
-    self.contentIdBlock           = [self codeBlockWithLabel:&contentIdLabel
-                                            button:&contentIdCopyButton
-                                              font:codeFont
-                                          copySize:copySize];
-    self.contentIdLabel           = contentIdLabel;
-    self.contentIdCopyButton      = contentIdCopyButton;
 
     self.authorChip   = [self chipWithIcon:@"person.fill" label:self.authorLabel];
     self.progressChip = [self chipWithIcon:@"clock.fill" label:self.progressLabel];
@@ -252,31 +239,13 @@ extern double          totalBookDuration;
     [self.asinBlock setContentHuggingPriority:UILayoutPriorityDefaultLow
                                       forAxis:UILayoutConstraintAxisHorizontal];
 
-    UIStackView *contentIdStack                              = [[UIStackView alloc]
-        initWithArrangedSubviews:@[ contentIdTitleLabel, self.contentIdBlock ]];
-    contentIdStack.axis                                      = UILayoutConstraintAxisHorizontal;
-    contentIdStack.spacing                                   = 8;
-    contentIdStack.alignment                                 = UIStackViewAlignmentCenter;
-    contentIdStack.translatesAutoresizingMaskIntoConstraints = NO;
-    [contentIdTitleLabel setContentHuggingPriority:UILayoutPriorityRequired
-                                           forAxis:UILayoutConstraintAxisHorizontal];
-    [contentIdTitleLabel setContentCompressionResistancePriority:UILayoutPriorityRequired
-                                                         forAxis:UILayoutConstraintAxisHorizontal];
-    [self.contentIdBlock setContentCompressionResistancePriority:UILayoutPriorityDefaultHigh
-                                                         forAxis:UILayoutConstraintAxisHorizontal];
-    [self.contentIdBlock setContentHuggingPriority:UILayoutPriorityDefaultLow
-                                           forAxis:UILayoutConstraintAxisHorizontal];
-
-    UIStackView *idsRow =
-        [[UIStackView alloc] initWithArrangedSubviews:@[ asinStack, contentIdStack ]];
-    idsRow.axis                                      = UILayoutConstraintAxisHorizontal;
-    idsRow.spacing                                   = spacing;
-    idsRow.alignment                                 = UIStackViewAlignmentLeading;
-    idsRow.distribution                              = UIStackViewDistributionFill;
+    UIStackView *idsRow = [[UIStackView alloc] initWithArrangedSubviews:@[ asinStack ]];
+    idsRow.axis         = UILayoutConstraintAxisHorizontal;
+    idsRow.spacing      = spacing;
+    idsRow.alignment    = UIStackViewAlignmentLeading;
+    idsRow.distribution = UIStackViewDistributionFill;
     idsRow.translatesAutoresizingMaskIntoConstraints = NO;
     self.idsRow                                      = idsRow;
-    [[self.asinBlock.widthAnchor constraintEqualToAnchor:self.contentIdBlock.widthAnchor]
-        setActive:YES];
 
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[ metaStack, idsRow ]];
     stack.axis         = UILayoutConstraintAxisVertical;
@@ -892,9 +861,7 @@ extern double          totalBookDuration;
                 : @"--";
 
         extern NSString *currentASIN;
-        extern NSString *currentContentID;
-        NSString        *asin      = currentASIN ?: info[@"asin"] ?: @"";
-        NSString        *contentId = currentContentID ?: info[@"contentId"] ?: @"";
+        NSString        *asin = currentASIN ?: info[@"asin"] ?: @"";
 
         NSDictionary *newData = @{
             @"bookTitle" : bookTitle.length ? bookTitle : @"(No Book Title)",
@@ -902,7 +869,6 @@ extern double          totalBookDuration;
             @"chapterTitle" : chapterTitle ?: @"",
             @"progressStr" : progressStr,
             @"asin" : asin.length ? asin : @"(no ASIN)",
-            @"contentId" : contentId.length ? contentId : @"(no Content ID)",
             @"totalBookDuration" : @(totalBookDuration)
         };
 
@@ -941,15 +907,11 @@ extern double          totalBookDuration;
         self.authorChip.hidden   = (((NSString *) data[@"author"]).length == 0);
         self.progressChip.hidden = (totalBookDuration <= 0.0);
 
-        self.asinLabel.text      = data[@"asin"];
-        self.contentIdLabel.text = data[@"contentId"];
+        self.asinLabel.text = data[@"asin"];
 
         [self.asinCopyButton addTarget:self
                                 action:@selector(copyASIN)
                       forControlEvents:UIControlEventTouchUpInside];
-        [self.contentIdCopyButton addTarget:self
-                                     action:@selector(copyContentId)
-                           forControlEvents:UIControlEventTouchUpInside];
     };
 
     if (animated)
@@ -1017,14 +979,6 @@ extern double          totalBookDuration;
     {
         UIPasteboard.generalPasteboard.string = self.asinLabel.text;
         [self showCopiedToast:@"ASIN copied!"];
-    }
-}
-- (void)copyContentId
-{
-    if (self.contentIdLabel.text.length)
-    {
-        UIPasteboard.generalPasteboard.string = self.contentIdLabel.text;
-        [self showCopiedToast:@"Content ID copied!"];
     }
 }
 
@@ -1293,7 +1247,6 @@ extern double          totalBookDuration;
     [self adjustHardcoverSectionBottomTo:self.currentlyReadingContainer];
 
     extern NSString *currentASIN;
-    extern NSString *currentContentID;
     const CGFloat    kPillWidth = 96.0;
     for (NSDictionary *item in self.currentlyReadingItems)
     {
@@ -1446,19 +1399,7 @@ extern double          totalBookDuration;
                 }
             }
         }
-        BOOL matchesContent = NO;
-        if (currentContentID && currentContentID.length > 0)
-        {
-            for (NSString *a in asins)
-            {
-                if ([a isKindOfClass:[NSString class]] && [a isEqualToString:currentContentID])
-                {
-                    matchesContent = YES;
-                    break;
-                }
-            }
-        }
-        if (matchesASIN || matchesContent)
+        if (matchesASIN)
         {
             [Utilities applySubtleGreenGlowToLayer:pill.layer];
         }
