@@ -1,31 +1,31 @@
 {
-	"name": "Chronos App Repo",
-	"identifier": "app.chronos.ios.repo",
-	"iconURL": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/38/df/fa/38dffa0e-9180-af3b-0236-d62a65360c53/AppIcon-0-0-1x_U007emarketing-0-0-0-8-0-0-85-220.png/1024x1024.jpg",
-	"website": "https://github.com/castdrian/Chronos",
-	"tintColor": "#bd56e2",
-	"featuredApps": [
-		"com.audible.iphone"
-	],
-	"apps": [
-		{
-			"name": "Chronos",
-			"bundleIdentifier": "com.audible.iphone",
-			"developerName": "Adrian Castro",
-			"subtitle": "Sync Audible progress to Hardcover",
-			"iconURL": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/38/df/fa/38dffa0e-9180-af3b-0236-d62a65360c53/AppIcon-0-0-1x_U007emarketing-0-0-0-8-0-0-85-220.png/1024x1024.jpg",
-			"localizedDescription": "Sync Audible progress to Hardcover",
-			"tintColor": "#ff9700",
-			"category": "entertainment",
-			"versions": [
-				{
-					"version": "4.52",
-					"date": "2025-09-05",
-					"size": 51558773,
-					"downloadURL": "https://github.com/castdrian/Chronos/releases/download/v4.52/Chronos.ipa",
-					"localizedDescription": "Further improvements to overall system stability and other minor adjustments have been made to enhance the user experience."
-				}
-			]
-		}
-	]
+  "name": "Chronos App Repo",
+  "identifier": "app.chronos.ios.repo",
+  "iconURL": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/38/df/fa/38dffa0e-9180-af3b-0236-d62a65360c53/AppIcon-0-0-1x_U007emarketing-0-0-0-8-0-0-85-220.png/1024x1024.jpg",
+  "website": "https://github.com/castdrian/Chronos",
+  "tintColor": "#bd56e2",
+  "featuredApps": [
+    "com.audible.iphone"
+  ],
+  "apps": [
+    {
+      "name": "Chronos",
+      "bundleIdentifier": "com.audible.iphone",
+      "developerName": "Adrian Castro",
+      "subtitle": "Sync Audible progress to Hardcover",
+      "iconURL": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/38/df/fa/38dffa0e-9180-af3b-0236-d62a65360c53/AppIcon-0-0-1x_U007emarketing-0-0-0-8-0-0-85-220.png/1024x1024.jpg",
+      "localizedDescription": "Sync Audible progress to Hardcover",
+      "tintColor": "#ff9700",
+      "category": "entertainment",
+      "versions": [
+        {
+          "version": "4.52",
+          "date": "2025-09-06",
+          "size": 51558767,
+          "downloadURL": "https://github.com/castdrian/Chronos/releases/download/v4.52/Chronos.ipa",
+          "localizedDescription": "Further improvements to overall system stability and other minor adjustments have been made to enhance the user experience."
+        }
+      ]
+    }
+  ]
 }
