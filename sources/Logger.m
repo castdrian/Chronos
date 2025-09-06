@@ -8,7 +8,7 @@ static dispatch_queue_t _logQueue;
 {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken,
-                  ^{ _logQueue = dispatch_queue_create("app.unbound", DISPATCH_QUEUE_SERIAL); });
+                  ^{ _logQueue = dispatch_queue_create("chronos", DISPATCH_QUEUE_SERIAL); });
 }
 
 static os_log_t getLoggerForCategory(const char *category)
@@ -27,7 +27,7 @@ static os_log_t getLoggerForCategory(const char *category)
 
         if (!logger)
         {
-            logger = os_log_create("app.unbound", category);
+            logger = os_log_create("chronos", category);
             if (logger)
             {
                 [loggers setObject:logger forKey:categoryKey];
@@ -52,7 +52,7 @@ static os_log_t getLoggerForCategory(const char *category)
 
     if (isDefaultCategory)
     {
-        message = [NSString stringWithFormat:@"[Unbound] %@", message];
+        message = [NSString stringWithFormat:@"[Chronos] %@", message];
     }
     else
     {
@@ -63,7 +63,7 @@ static os_log_t getLoggerForCategory(const char *category)
             categoryStr         = [firstChar stringByAppendingString:restOfStr];
         }
 
-        message = [NSString stringWithFormat:@"[Unbound] [%@] %@", categoryStr, message];
+        message = [NSString stringWithFormat:@"[Chronos] [%@] %@", categoryStr, message];
     }
 
     os_log_t logger = getLoggerForCategory(category);
