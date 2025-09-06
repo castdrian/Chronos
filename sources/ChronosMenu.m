@@ -153,13 +153,16 @@ extern double          totalBookDuration;
     card.layer.cornerRadius                        = 14;
     card.layer.masksToBounds                       = YES;
     card.translatesAutoresizingMaskIntoConstraints = NO;
+    card.tag                                       = 100;
+    card.hidden = YES;
     [self.rootStack addArrangedSubview:card];
 
     self.spinner                                           = [[UIActivityIndicatorView alloc]
         initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleLarge];
     self.spinner.translatesAutoresizingMaskIntoConstraints = NO;
     [card addSubview:self.spinner];
-    [self.spinner startAnimating];
+    self.spinner.hidden =
+        YES;
     [NSLayoutConstraint activateConstraints:@[
         [self.spinner.centerXAnchor constraintEqualToAnchor:card.centerXAnchor],
         [self.spinner.centerYAnchor constraintEqualToAnchor:card.centerYAnchor]
@@ -183,7 +186,6 @@ extern double          totalBookDuration;
                                      copySize:copySize];
     self.asinLabel           = asinLabel;
     self.asinCopyButton      = asinCopyButton;
-
 
     self.authorChip   = [self chipWithIcon:@"person.fill" label:self.authorLabel];
     self.progressChip = [self chipWithIcon:@"clock.fill" label:self.progressLabel];
@@ -803,10 +805,13 @@ extern double          totalBookDuration;
     }
     else
     {
-        [self.spinner startAnimating];
-        self.spinner.hidden = NO;
-        UIView *stack       = [self.view viewWithTag:101];
-        stack.hidden        = YES;
+        UIView *metaCard = [self.view viewWithTag:100];
+        if (metaCard)
+            metaCard.hidden = YES;
+        UIView *stack = [self.view viewWithTag:101];
+        if (stack)
+            stack.hidden = YES;
+        self.spinner.hidden = YES;
     }
 
     [self refreshAudibleData];
@@ -864,11 +869,11 @@ extern double          totalBookDuration;
         NSString        *asin = currentASIN ?: info[@"asin"] ?: @"";
 
         NSDictionary *newData = @{
-            @"bookTitle" : bookTitle.length ? bookTitle : @"(No Book Title)",
+            @"bookTitle" : bookTitle ?: @"",
             @"author" : author ?: @"",
             @"chapterTitle" : chapterTitle ?: @"",
-            @"progressStr" : progressStr,
-            @"asin" : asin.length ? asin : @"(no ASIN)",
+            @"progressStr" : progressStr ?: @"",
+            @"asin" : asin ?: @"",
             @"totalBookDuration" : @(totalBookDuration)
         };
 
@@ -892,6 +897,48 @@ extern double          totalBookDuration;
         return;
 
     self.currentlyDisplayedAudibleData = [data copy];
+    UIView   *metaCard                 = [self.view viewWithTag:100];
+    NSString *bookTitle =
+        [data[@"bookTitle"] isKindOfClass:[NSString class]] ? data[@"bookTitle"] : @"";
+    NSString *asin   = [data[@"asin"] isKindOfClass:[NSString class]] ? data[@"asin"] : @"";
+    NSString *author = [data[@"author"] isKindOfClass:[NSString class]] ? data[@"author"] : @"";
+    double    totalBookDuration =
+        [data[@"totalBookDuration"] respondsToSelector:@selector(doubleValue)]
+               ? [data[@"totalBookDuration"] doubleValue]
+               : 0.0;
+    BOOL titleIsPlaceholder = NO;
+    if (bookTitle.length == 0)
+        titleIsPlaceholder = YES;
+    else
+    {
+        NSString *lower = [bookTitle lowercaseString];
+        if ([lower containsString:@"no book title"] || [lower isEqualToString:@"(no title)"] ||
+            [lower isEqualToString:@"no title"])
+            titleIsPlaceholder = YES;
+    }
+    BOOL noMeaningfulData =
+        (titleIsPlaceholder && asin.length == 0 && author.length == 0 && totalBookDuration <= 0.0);
+    if (noMeaningfulData)
+    {
+        if (metaCard)
+            metaCard.hidden = YES;
+        return;
+    }
+    BOOL firstReveal = NO;
+    if (metaCard)
+    {
+        if (metaCard.hidden)
+        {
+            firstReveal        = YES;
+            metaCard.hidden    = NO;
+            metaCard.alpha     = 0.0;
+            metaCard.transform = CGAffineTransformMakeScale(0.97, 0.97);
+        }
+        else
+        {
+            metaCard.hidden = NO;
+        }
+    }
 
     void (^updateBlock)(void) = ^{
         [self.spinner stopAnimating];
@@ -914,10 +961,26 @@ extern double          totalBookDuration;
                       forControlEvents:UIControlEventTouchUpInside];
     };
 
+    if (firstReveal)
+    {
+        updateBlock();
+        [UIView animateWithDuration:0.35
+            delay:0.02
+            usingSpringWithDamping:0.85
+            initialSpringVelocity:0.4
+            options:UIViewAnimationOptionCurveEaseOut | UIViewAnimationOptionAllowUserInteraction
+            animations:^{
+                metaCard.alpha     = 1.0;
+                metaCard.transform = CGAffineTransformIdentity;
+            }
+            completion:^(BOOL finished) { [self configureSheetPresentation]; }];
+        return;
+    }
+
     if (animated)
     {
         [UIView transitionWithView:self.view
-                          duration:0.3
+                          duration:0.25
                            options:UIViewAnimationOptionTransitionCrossDissolve
                         animations:updateBlock
                         completion:^(BOOL finished) { [self configureSheetPresentation]; }];

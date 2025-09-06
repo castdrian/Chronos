@@ -102,6 +102,11 @@ void showChronosMenuSheet(UIViewController *presentingVC)
                                                       target:menuVC
                                                       action:@selector(dismiss)];
     menuVC.navigationItem.rightBarButtonItem = doneButton;
+
+    UIImpactFeedbackGenerator *gen =
+        [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
+    [gen prepare];
+    [gen impactOccurred];
     [rootVC presentViewController:navController animated:YES completion:nil];
     objc_setAssociatedObject(navController, "chronosTopWindow", topWindow,
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
