@@ -1,5 +1,5 @@
 Name: Chronos
-Description: Sync Audible progress to Hardcover.
+Description: Sync Audible progress to Hardcover
 Version: 1.1.1
 Package: dev.adrian.chronos
 Architecture: iphoneos-arm
