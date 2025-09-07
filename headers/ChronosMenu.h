@@ -5,6 +5,7 @@
 
 #import "Utilities.h"
 #import "HardcoverAPI.h"
+#import "Chronos.h"
 
 @interface ChronosMenu : UIViewController
 @end

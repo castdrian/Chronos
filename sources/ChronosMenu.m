@@ -42,6 +42,8 @@ extern double          totalBookDuration;
 @property (nonatomic, strong) UIStackView             *idsRow;
 @property (nonatomic, strong) HardcoverUser           *currentlyDisplayedUser;
 @property (nonatomic, strong) NSDictionary            *currentlyDisplayedAudibleData;
+@property (nonatomic, strong) NSTimer                 *progressTimer;
+@property (nonatomic, strong) NSString                *lastAlertedASIN;
 @end
 
 @implementation ChronosMenu
@@ -58,6 +60,16 @@ extern double          totalBookDuration;
     [self setupUI];
     [self loadData];
     [self checkHardcoverAuth];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleProgressUpdate:)
+                                                 name:@"ChronosProgressUpdateNotification"
+                                               object:nil];
+}
+
+- (void)dealloc
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 - (void)viewDidAppear:(BOOL)animated
@@ -65,6 +77,19 @@ extern double          totalBookDuration;
     [super viewDidAppear:animated];
     [self configureSheetPresentation];
     [self updateResponsiveLayoutForTraitCollection:self.traitCollection];
+    self.progressTimer = [NSTimer scheduledTimerWithTimeInterval:0.5
+                                                          target:self
+                                                        selector:@selector(updateProgress)
+                                                        userInfo:nil
+                                                         repeats:YES];
+}
+
+- (void)viewWillDisappear:(BOOL)animated
+{
+    [super viewWillDisappear:animated];
+    [self.progressTimer invalidate];
+    self.progressTimer   = nil;
+    self.lastAlertedASIN = nil;
 }
 
 - (void)configureSheetPresentation
@@ -154,15 +179,14 @@ extern double          totalBookDuration;
     card.layer.masksToBounds                       = YES;
     card.translatesAutoresizingMaskIntoConstraints = NO;
     card.tag                                       = 100;
-    card.hidden = YES;
+    card.hidden                                    = YES;
     [self.rootStack addArrangedSubview:card];
 
     self.spinner                                           = [[UIActivityIndicatorView alloc]
         initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleLarge];
     self.spinner.translatesAutoresizingMaskIntoConstraints = NO;
     [card addSubview:self.spinner];
-    self.spinner.hidden =
-        YES;
+    self.spinner.hidden = YES;
     [NSLayoutConstraint activateConstraints:@[
         [self.spinner.centerXAnchor constraintEqualToAnchor:card.centerXAnchor],
         [self.spinner.centerYAnchor constraintEqualToAnchor:card.centerYAnchor]
@@ -827,46 +851,26 @@ extern double          totalBookDuration;
             bookTitle = info[MPMediaItemPropertyTitle] ?: @"";
         NSString *chapterTitle = info[MPMediaItemPropertyTitle] ?: @"";
         NSString *author       = info[MPMediaItemPropertyArtist] ?: @"";
-        NSNumber *elapsed      = info[MPNowPlayingInfoPropertyElapsedPlaybackTime];
-
-        extern double          totalBookDuration;
-        extern NSMutableArray *allChapters;
-        double                 fullElapsed = 0.0;
-        if (allChapters && chapterTitle.length > 0)
-        {
-            NSInteger chapterIdx = -1;
-            for (NSInteger i = 0; i < [allChapters count]; i++)
-            {
-                NSDictionary *ch = allChapters[i];
-                if ([ch[@"title"] isEqualToString:chapterTitle])
-                {
-                    chapterIdx = i;
-                    break;
-                }
-            }
-            for (NSInteger i = 0; i < chapterIdx; i++)
-            {
-                NSNumber *dur = allChapters[i][@"duration"];
-                if (dur)
-                    fullElapsed += [dur doubleValue] / 1000.0;
-            }
-            if (elapsed)
-                fullElapsed += [elapsed doubleValue];
-        }
-        else if (elapsed)
-        {
-            fullElapsed = [elapsed doubleValue];
-        }
-        NSString *fullElapsedStr = [self formatTime:fullElapsed];
-        NSString *fullDurationStr =
-            totalBookDuration > 0.0 ? [self formatTime:totalBookDuration] : @"--";
-        NSString *progressStr =
-            (totalBookDuration > 0.0)
-                ? [NSString stringWithFormat:@"%@ / %@", fullElapsedStr, fullDurationStr]
-                : @"--";
 
         extern NSString *currentASIN;
-        NSString        *asin = currentASIN ?: info[@"asin"] ?: @"";
+        NSString        *asin = currentASIN ?: @"";
+
+        NSInteger currentProgress = -1;
+        NSInteger totalDuration   = -1;
+        NSString *progressStr     = @"--";
+
+        if (asin.length > 0)
+        {
+            currentProgress = [AudibleMetadataCapture getCurrentProgressForASIN:asin];
+            totalDuration   = [AudibleMetadataCapture getTotalDurationForASIN:asin];
+
+            if (currentProgress >= 0 && totalDuration > 0)
+            {
+                NSString *currentStr = [self formatTime:currentProgress];
+                NSString *totalStr   = [self formatTime:totalDuration];
+                progressStr          = [NSString stringWithFormat:@"%@ / %@", currentStr, totalStr];
+            }
+        }
 
         NSDictionary *newData = @{
             @"bookTitle" : bookTitle ?: @"",
@@ -874,7 +878,8 @@ extern double          totalBookDuration;
             @"chapterTitle" : chapterTitle ?: @"",
             @"progressStr" : progressStr ?: @"",
             @"asin" : asin ?: @"",
-            @"totalBookDuration" : @(totalBookDuration)
+            @"currentProgress" : @(currentProgress),
+            @"totalDuration" : @(totalDuration)
         };
 
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -891,6 +896,45 @@ extern double          totalBookDuration;
     });
 }
 
+- (void)handleProgressUpdate:(NSNotification *)notification
+{
+    NSDictionary *userInfo = notification.userInfo;
+    if (!userInfo)
+        return;
+
+    NSString *asin     = userInfo[@"asin"];
+    NSNumber *progress = userInfo[@"progress"];
+    NSNumber *total    = userInfo[@"total"];
+
+    if (!asin || !progress || !total)
+        return;
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSString *progressStr = @"--";
+        if ([progress integerValue] >= 0 && [total integerValue] > 0)
+        {
+            NSString *currentStr = [self formatTime:[progress integerValue]];
+            NSString *totalStr   = [self formatTime:[total integerValue]];
+            progressStr          = [NSString stringWithFormat:@"%@ / %@", currentStr, totalStr];
+        }
+
+        if (self.progressLabel)
+        {
+            self.progressLabel.text = progressStr;
+        }
+
+        if (self.currentlyDisplayedAudibleData)
+        {
+            NSMutableDictionary *updatedData   = [self.currentlyDisplayedAudibleData mutableCopy];
+            updatedData[@"progressStr"]        = progressStr;
+            updatedData[@"currentProgress"]    = progress;
+            updatedData[@"totalDuration"]      = total;
+            self.currentlyDisplayedAudibleData = [updatedData copy];
+            [self saveCachedAudibleData:self.currentlyDisplayedAudibleData];
+        }
+    });
+}
+
 - (void)updateAudibleUIWithData:(NSDictionary *)data animated:(BOOL)animated
 {
     if (!data)
@@ -902,11 +946,10 @@ extern double          totalBookDuration;
         [data[@"bookTitle"] isKindOfClass:[NSString class]] ? data[@"bookTitle"] : @"";
     NSString *asin   = [data[@"asin"] isKindOfClass:[NSString class]] ? data[@"asin"] : @"";
     NSString *author = [data[@"author"] isKindOfClass:[NSString class]] ? data[@"author"] : @"";
-    double    totalBookDuration =
-        [data[@"totalBookDuration"] respondsToSelector:@selector(doubleValue)]
-               ? [data[@"totalBookDuration"] doubleValue]
-               : 0.0;
-    BOOL titleIsPlaceholder = NO;
+    NSInteger totalDuration = [data[@"totalDuration"] respondsToSelector:@selector(integerValue)]
+                                  ? [data[@"totalDuration"] integerValue]
+                                  : -1;
+    BOOL      titleIsPlaceholder = NO;
     if (bookTitle.length == 0)
         titleIsPlaceholder = YES;
     else
@@ -917,7 +960,7 @@ extern double          totalBookDuration;
             titleIsPlaceholder = YES;
     }
     BOOL noMeaningfulData =
-        (titleIsPlaceholder && asin.length == 0 && author.length == 0 && totalBookDuration <= 0.0);
+        (titleIsPlaceholder && asin.length == 0 && author.length == 0 && totalDuration <= 0);
     if (noMeaningfulData)
     {
         if (metaCard)
@@ -950,9 +993,9 @@ extern double          totalBookDuration;
         self.authorLabel.text   = data[@"author"];
         self.progressLabel.text = data[@"progressStr"];
 
-        double totalBookDuration = [data[@"totalBookDuration"] doubleValue];
+        NSInteger totalDuration  = [data[@"totalDuration"] integerValue];
         self.authorChip.hidden   = (((NSString *) data[@"author"]).length == 0);
-        self.progressChip.hidden = (totalBookDuration <= 0.0);
+        self.progressChip.hidden = (totalDuration <= 0);
 
         self.asinLabel.text = data[@"asin"];
 
@@ -1011,11 +1054,6 @@ extern double          totalBookDuration;
 - (void)dismissWithAnimation
 {
     [self dismissViewControllerAnimated:YES completion:nil];
-}
-
-- (void)viewWillDisappear:(BOOL)animated
-{
-    [super viewWillDisappear:animated];
 }
 
 - (void)viewDidDisappear:(BOOL)animated
@@ -1790,4 +1828,42 @@ extern double          totalBookDuration;
     return YES;
 }
 
+- (void)updateProgress
+{
+    NSString *asin          = self.asinLabel.text;
+    NSInteger totalDuration = [AudibleMetadataCapture getTotalDurationForASIN:asin];
+    if (totalDuration <= 0)
+    {
+        if (asin.length > 0 && ![asin isEqualToString:self.lastAlertedASIN])
+        {
+            self.lastAlertedASIN = asin;
+            UIAlertController *alert =
+                [UIAlertController alertControllerWithTitle:@"Book Not Downloaded"
+                                                    message:@"You must download this item to "
+                                                            @"sync progress to Hardcover."
+                                             preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"OK"
+                                                      style:UIAlertActionStyleDefault
+                                                    handler:nil]];
+            UIViewController *vc = self;
+            while (vc.presentedViewController)
+                vc = vc.presentedViewController;
+            [vc presentViewController:alert animated:YES completion:nil];
+        }
+        self.progressLabel.text = @"--";
+        return;
+    }
+
+    NSInteger currentProgress = [AudibleMetadataCapture getCurrentProgressForASIN:asin];
+    if (currentProgress < 0)
+    {
+        self.progressLabel.text = @"--";
+        return;
+    }
+
+    NSString *progressStr =
+        [NSString stringWithFormat:@"%@ / %@", [self formatTime:currentProgress],
+                                   [self formatTime:totalDuration]];
+    self.progressLabel.text = progressStr;
+}
 @end

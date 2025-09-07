@@ -1,163 +1,343 @@
 #import "Chronos.h"
 
-NSString *currentASIN = nil;
+NSString       *currentASIN                       = nil;
+NSString *const ChronosProgressUpdateNotification = @"ChronosProgressUpdateNotification";
 
-NSMutableArray  *allChapters       = nil;
-double           totalBookDuration = 0.0;
 static double    lastLoggedElapsed = -1;
-static NSInteger lastLoggedChapter = -1;
+static NSInteger lastTotalDuration = -1;
 
 @implementation AudibleMetadataCapture
-+ (BOOL)isSafeClassForKVC:(NSString *)className
-{
-    return [className containsString:@"Audible"];
-}
 
 + (void)initialize
 {
     if (self == [AudibleMetadataCapture class])
     {
-        allChapters       = [[NSMutableArray alloc] init];
-        totalBookDuration = 0.0;
-        currentASIN       = nil;
+        currentASIN = nil;
     }
 }
 
-+ (void)processChapterData:(id)chapterObject withContext:(NSString *)context
++ (NSString *)getAudibleDocumentsPath
 {
     @try
     {
-        NSString *title  = nil;
-        NSNumber *length = nil;
-        @try
+        NSArray *paths =
+            NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+        if (paths.count > 0)
         {
-            title  = [chapterObject valueForKey:@"title"];
-            length = [chapterObject valueForKey:@"length"];
-            if (!length)
-                length = [chapterObject valueForKey:@"duration"];
-        }
-        @catch (__unused NSException *e)
-        {
-        }
-        if (title && length)
-        {
-            BOOL exists = NO;
-            for (NSDictionary *ch in allChapters)
-            {
-                if ([ch[@"title"] isEqualToString:title])
-                {
-                    exists = YES;
-                    break;
-                }
-            }
-            if (!exists)
-            {
-                [allChapters addObject:@{@"title" : title, @"duration" : length}];
-                [self calculateTotalBookDuration];
-            }
-        }
-    }
-    @catch (__unused NSException *e)
-    {
-    }
-}
-
-+ (void)calculateTotalBookDuration
-{
-    @try
-    {
-        totalBookDuration = 0.0;
-        for (NSDictionary *chapter in allChapters)
-        {
-            NSNumber *duration = chapter[@"duration"];
-            if (duration)
-                totalBookDuration += [duration doubleValue] / 1000.0;
-        }
-    }
-    @catch (__unused NSException *e)
-    {
-    }
-}
-
-+ (void)captureMetadataFromObject:(id)object withContext:(NSString *)context
-{
-    if (!object)
-        return;
-    @try
-    {
-        NSString *classNameStr = NSStringFromClass([object class]);
-        if ([classNameStr isEqualToString:@"AudiblePlayer.Chapter"])
-        {
-            [self processChapterData:object withContext:context];
-        }
-    }
-    @catch (__unused NSException *e)
-    {
-    }
-}
-
-+ (void)calculateBookProgress:(NSDictionary *)nowPlayingInfo
-{
-    @try
-    {
-        NSString *currentTitle    = nowPlayingInfo[MPMediaItemPropertyTitle];
-        NSNumber *chapterPosition = nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime];
-        if (!currentTitle || !chapterPosition || totalBookDuration <= 0.0 ||
-            [allChapters count] == 0)
-            return;
-        NSInteger currentChapterIndex = -1;
-        for (NSInteger i = 0; i < [allChapters count]; i++)
-        {
-            NSDictionary *chapter = allChapters[i];
-            if ([chapter[@"title"] isEqualToString:currentTitle])
-            {
-                currentChapterIndex = i;
-                break;
-            }
-        }
-        if (currentChapterIndex < 0)
-            return;
-        double totalElapsedSeconds = 0.0;
-        for (NSInteger i = 0; i < currentChapterIndex; i++)
-        {
-            NSNumber *chapterDur = allChapters[i][@"duration"];
-            if (chapterDur)
-                totalElapsedSeconds += [chapterDur doubleValue] / 1000.0;
-        }
-        totalElapsedSeconds += [chapterPosition doubleValue];
-
-        if (fabs(totalElapsedSeconds - lastLoggedElapsed) < 1.0 &&
-            currentChapterIndex == lastLoggedChapter)
-            return;
-
-        lastLoggedElapsed = totalElapsedSeconds;
-        lastLoggedChapter = currentChapterIndex;
-
-        if (currentASIN && currentASIN.length > 0)
-        {
-            NSInteger progressSeconds = (NSInteger) floor(totalElapsedSeconds);
-            NSInteger totalSeconds    = (NSInteger) floor(totalBookDuration);
-
-            [[HardcoverAPI sharedInstance]
-                updateListeningProgressForASIN:currentASIN
-                               progressSeconds:progressSeconds
-                                  totalSeconds:totalSeconds
-                                    completion:^(BOOL success, NSError *error) {
-                                        if (!success)
-                                        {
-                                            [Logger error:LOG_CATEGORY_HARDCOVER
-                                                   format:@"Progress update failed for ASIN %@: %@",
-                                                          currentASIN,
-                                                          error ? error.localizedDescription
-                                                                : @"Unknown error"];
-                                        }
-                                    }];
+            return paths[0];
         }
     }
     @catch (__unused NSException *e)
     {
         [Logger error:LOG_CATEGORY_UTILITIES
-               format:@"Exception in calculateBookProgress: %@", e.description];
+               format:@"Failed to get documents path: %@", e.description];
+    }
+    return nil;
+}
+
++ (NSInteger)getCurrentProgressForASIN:(NSString *)asin
+{
+    if (!asin || asin.length == 0)
+        return -1;
+
+    @try
+    {
+        NSString *documentsPath = [self getAudibleDocumentsPath];
+        if (!documentsPath)
+            return -1;
+
+        NSString *listeningLogPath = [documentsPath stringByAppendingPathComponent:@"listeningLog"];
+        NSFileManager *fileManager = [NSFileManager defaultManager];
+
+        NSDirectoryEnumerator *enumerator     = [fileManager enumeratorAtPath:listeningLogPath];
+        NSString              *targetFileName = [NSString stringWithFormat:@"%@.json", asin];
+        NSString              *logFilePath    = nil;
+
+        for (NSString *file in enumerator)
+        {
+            if ([file.lastPathComponent isEqualToString:targetFileName])
+            {
+                logFilePath = [listeningLogPath stringByAppendingPathComponent:file];
+                break;
+            }
+        }
+
+        if (!logFilePath || ![fileManager fileExistsAtPath:logFilePath])
+        {
+            [Logger info:LOG_CATEGORY_DEFAULT format:@"No listening log found for ASIN: %@", asin];
+            return -1;
+        }
+
+        NSData *data = [NSData dataWithContentsOfFile:logFilePath];
+        if (!data)
+            return -1;
+
+        NSError *error         = nil;
+        NSArray *progressArray = [NSJSONSerialization JSONObjectWithData:data
+                                                                 options:0
+                                                                   error:&error];
+
+        if (error || ![progressArray isKindOfClass:[NSArray class]] || progressArray.count == 0)
+        {
+            [Logger error:LOG_CATEGORY_DEFAULT
+                   format:@"Failed to parse listening log for ASIN %@: %@", asin,
+                          error.localizedDescription];
+            return -1;
+        }
+
+        NSDictionary *lastEntry = progressArray.lastObject;
+        if ([lastEntry isKindOfClass:[NSDictionary class]])
+        {
+            NSNumber *position = lastEntry[@"position"];
+            if (position)
+            {
+                return [position integerValue] / 1000;
+            }
+        }
+    }
+    @catch (__unused NSException *e)
+    {
+        [Logger error:LOG_CATEGORY_UTILITIES
+               format:@"Exception getting progress for ASIN %@: %@", asin, e.description];
+    }
+
+    return -1;
+}
+
++ (NSInteger)calculateTotalDurationFromChapters:(NSArray *)chapters
+{
+    NSInteger totalDurationMS = 0;
+
+    for (NSDictionary *chapter in chapters)
+    {
+        if ([chapter isKindOfClass:[NSDictionary class]])
+        {
+            NSNumber *lengthMS = chapter[@"lengthMS"];
+            if ([lengthMS isKindOfClass:[NSNumber class]])
+            {
+                totalDurationMS += [lengthMS integerValue];
+            }
+
+            NSArray *nestedChapters = chapter[@"chapters"];
+            if ([nestedChapters isKindOfClass:[NSArray class]] && nestedChapters.count > 0)
+            {
+                totalDurationMS += [self calculateTotalDurationFromChapters:nestedChapters];
+            }
+        }
+    }
+
+    return totalDurationMS;
+}
+
++ (NSInteger)getTotalDurationForASIN:(NSString *)asin
+{
+    if (!asin || asin.length == 0)
+        return -1;
+
+    @try
+    {
+        NSString *documentsPath = [self getAudibleDocumentsPath];
+        if (!documentsPath)
+            return -1;
+
+        NSString *assetsPlistPath  = [documentsPath stringByAppendingPathComponent:@"assets.plist"];
+        NSFileManager *fileManager = [NSFileManager defaultManager];
+
+        if (![fileManager fileExistsAtPath:assetsPlistPath])
+        {
+            [Logger info:LOG_CATEGORY_DEFAULT
+                  format:@"assets.plist not found - book may not be downloaded"];
+            return -1;
+        }
+
+        NSArray *assets = [NSArray arrayWithContentsOfFile:assetsPlistPath];
+        if (![assets isKindOfClass:[NSArray class]])
+        {
+            [Logger error:LOG_CATEGORY_DEFAULT format:@"Failed to load assets.plist"];
+            return -1;
+        }
+
+        for (NSDictionary *asset in assets)
+        {
+            if ([asset isKindOfClass:[NSDictionary class]])
+            {
+                NSString *assetASIN = asset[@"asin"];
+                if ([assetASIN isEqualToString:asin])
+                {
+                    NSDictionary *trackInfo = asset[@"trackInfo"];
+                    if ([trackInfo isKindOfClass:[NSDictionary class]])
+                    {
+                        NSArray *chapters = trackInfo[@"chapters"];
+                        if ([chapters isKindOfClass:[NSArray class]] && chapters.count > 0)
+                        {
+                            NSInteger totalDurationMS =
+                                [self calculateTotalDurationFromChapters:chapters];
+
+                            if (totalDurationMS > 0)
+                            {
+                                NSInteger totalDurationSeconds = totalDurationMS / 1000;
+                                [Logger
+                                      info:LOG_CATEGORY_DEFAULT
+                                    format:@"Calculated total duration from chapters: %ld seconds",
+                                           (long) totalDurationSeconds];
+                                return totalDurationSeconds;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        [Logger info:LOG_CATEGORY_DEFAULT
+              format:@"ASIN %@ not found in assets.plist - book may not be downloaded", asin];
+    }
+    @catch (__unused NSException *e)
+    {
+        [Logger error:LOG_CATEGORY_UTILITIES
+               format:@"Exception getting duration for ASIN %@: %@", asin, e.description];
+    }
+
+    return -1;
+}
+
++ (void)loadBookDataForASIN:(NSString *)asin
+{
+    if (!asin || asin.length == 0)
+        return;
+
+    if ([asin isEqualToString:currentASIN])
+        return;
+
+    currentASIN       = asin;
+    lastLoggedElapsed = -1;
+    lastTotalDuration = -1;
+
+    [Logger notice:LOG_CATEGORY_DEFAULT format:@"Loading book data for ASIN: %@", asin];
+
+    NSInteger totalDuration = [self getTotalDurationForASIN:asin];
+    if (totalDuration == -1)
+    {
+        [Logger info:LOG_CATEGORY_DEFAULT
+              format:@"Book with ASIN %@ is not downloaded. Please download the book first.", asin];
+        return;
+    }
+
+    lastTotalDuration = totalDuration;
+    [Logger info:LOG_CATEGORY_DEFAULT format:@"Book duration: %ld seconds", (long) totalDuration];
+}
+
++ (void)updateProgressAfterDelay:(NSString *)asin
+{
+    if (!asin || asin.length == 0)
+        return;
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t) (1.0 * NSEC_PER_SEC)),
+                   dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
+                   ^{ [self handleProgressUpdate:asin]; });
+}
+
++ (void)handleProgressUpdate:(NSString *)asin
+{
+    @try
+    {
+        NSInteger currentProgress = [self getCurrentProgressForASIN:asin];
+        NSInteger totalDuration   = [self getTotalDurationForASIN:asin];
+
+        if (currentProgress == -1 || totalDuration == -1)
+        {
+            [Logger info:LOG_CATEGORY_DEFAULT
+                  format:@"Could not get progress data for ASIN: %@", asin];
+            return;
+        }
+
+        if (abs((int) (currentProgress - lastLoggedElapsed)) < 1 &&
+            totalDuration == lastTotalDuration)
+            return;
+
+        lastLoggedElapsed = currentProgress;
+        lastTotalDuration = totalDuration;
+
+        [Logger info:LOG_CATEGORY_DEFAULT
+              format:@"Progress update: %ld/%ld seconds (%.1f%%)", (long) currentProgress,
+                     (long) totalDuration, (currentProgress * 100.0 / totalDuration)];
+
+        [[HardcoverAPI sharedInstance]
+            updateListeningProgressForASIN:asin
+                           progressSeconds:currentProgress
+                              totalSeconds:totalDuration
+                                completion:^(BOOL success, NSError *error) {
+                                    if (!success)
+                                    {
+                                        [Logger
+                                             error:LOG_CATEGORY_HARDCOVER
+                                            format:@"Progress update failed for ASIN %@: %@", asin,
+                                                   error ? error.localizedDescription
+                                                         : @"Unknown error"];
+                                    }
+                                }];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [[NSNotificationCenter defaultCenter]
+                postNotificationName:ChronosProgressUpdateNotification
+                              object:nil
+                            userInfo:@{
+                                @"asin" : asin,
+                                @"progress" : @(currentProgress),
+                                @"total" : @(totalDuration)
+                            }];
+        });
+
+        double completionPercentage = (double) currentProgress / totalDuration;
+        if (completionPercentage >= 0.90)
+        {
+            [Logger info:LOG_CATEGORY_DEFAULT format:@"Book is 90%% complete, marking as finished"];
+            [[HardcoverAPI sharedInstance]
+                markBookCompletedForASIN:asin
+                            totalSeconds:totalDuration
+                              completion:^(BOOL success, NSError *error) {
+                                  if (!success)
+                                  {
+                                      [Logger
+                                           error:LOG_CATEGORY_HARDCOVER
+                                          format:@"Failed to mark book completed for ASIN %@: %@",
+                                                 asin,
+                                                 error ? error.localizedDescription
+                                                       : @"Unknown error"];
+                                  }
+                              }];
+        }
+    }
+    @catch (__unused NSException *e)
+    {
+        [Logger error:LOG_CATEGORY_UTILITIES
+               format:@"Exception in handleProgressUpdate: %@", e.description];
+    }
+}
+
++ (void)handlePlayPauseEventWithInfo:(NSDictionary *)nowPlayingInfo
+{
+    if (!nowPlayingInfo || !currentASIN)
+        return;
+
+    @try
+    {
+        NSNumber   *rate          = nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate];
+        static BOOL lastIsPlaying = NO;
+        BOOL        isPlaying     = (rate ? ([rate doubleValue] > 0.0) : NO);
+
+        if (isPlaying != lastIsPlaying)
+        {
+            lastIsPlaying = isPlaying;
+            [Logger info:LOG_CATEGORY_DEFAULT
+                  format:@"Play/pause event: %@", isPlaying ? @"playing" : @"paused"];
+
+            [self updateProgressAfterDelay:currentASIN];
+        }
+    }
+    @catch (__unused NSException *e)
+    {
+        [Logger error:LOG_CATEGORY_UTILITIES
+               format:@"Exception in handlePlayPauseEventWithInfo: %@", e.description];
     }
 }
 
@@ -167,72 +347,11 @@ static NSInteger lastLoggedChapter = -1;
 
 - (void)setNowPlayingInfo:(NSDictionary *)nowPlayingInfo
 {
-    if (nowPlayingInfo)
+    if (nowPlayingInfo && currentASIN)
     {
-        [AudibleMetadataCapture calculateBookProgress:nowPlayingInfo];
-
-        @try
-        {
-            NSNumber   *rate          = nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate];
-            static BOOL lastIsPlaying = NO;
-            BOOL        isPlaying     = (rate ? ([rate doubleValue] > 0.0) : NO);
-            if (isPlaying != lastIsPlaying)
-            {
-                lastIsPlaying     = isPlaying;
-                NSNumber *elapsed = nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime];
-
-                if (!isPlaying && elapsed && currentASIN && totalBookDuration > 0.0)
-                {
-                    double pct = ([elapsed doubleValue] / totalBookDuration);
-                    if (pct >= 0.90)
-                    {
-                        [[HardcoverAPI sharedInstance]
-                            markBookCompletedForASIN:currentASIN
-                                        totalSeconds:(NSInteger) floor(totalBookDuration)
-                                          completion:^(BOOL success, NSError *error) {
-                                              if (!success)
-                                              {
-                                                  [Logger error:LOG_CATEGORY_HARDCOVER
-                                                         format:@"Failed to mark book completed "
-                                                                @"for ASIN %@: %@",
-                                                                currentASIN,
-                                                                error.localizedDescription];
-                                              }
-                                          }];
-                    }
-                }
-            }
-        }
-        @catch (__unused NSException *e)
-        {
-            [Logger error:LOG_CATEGORY_UTILITIES
-                   format:@"Exception in progress update: %@", e.description];
-        }
+        [AudibleMetadataCapture handlePlayPauseEventWithInfo:nowPlayingInfo];
     }
     %orig;
-}
-
-%end
-
-%hook NSObject
-
-- (instancetype)init
-{
-    id    result      = %orig;
-    Class resultClass = object_getClass(result);
-    if (resultClass)
-    {
-        const char *className = class_getName(resultClass);
-        if (className)
-        {
-            NSString *classNameStr = [NSString stringWithUTF8String:className];
-            if ([AudibleMetadataCapture isSafeClassForKVC:classNameStr])
-            {
-                [AudibleMetadataCapture captureMetadataFromObject:result withContext:@"init"];
-            }
-        }
-    }
-    return result;
 }
 
 %end
@@ -275,16 +394,13 @@ static NSInteger lastLoggedChapter = -1;
             [format substringWithRange:NSMakeRange(startIdx, endQuote.location - startIdx)];
         if (asin.length && ![asin isEqualToString:currentASIN])
         {
-            currentASIN = asin;
-            [allChapters removeAllObjects];
-            totalBookDuration = 0.0;
-            lastLoggedElapsed = -1;
-            lastLoggedChapter = -1;
-            [Logger notice:LOG_CATEGORY_DEFAULT format:@"ASIN => %@", asin];
+            [AudibleMetadataCapture loadBookDataForASIN:asin];
         }
     }
     @catch (__unused NSException *e)
     {
+        [Logger error:LOG_CATEGORY_UTILITIES
+               format:@"Exception in NSManagedObjectContext hook: %@", e.description];
     }
     return res;
 }

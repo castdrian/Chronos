@@ -5,7 +5,13 @@
 #import "Logger.h"
 
 @interface AudibleMetadataCapture : NSObject
-+ (void)calculateBookProgress:(NSDictionary *)nowPlayingInfo;
-+ (void)processChapterData:(id)chapterObject withContext:(NSString *)context;
-+ (void)calculateTotalBookDuration;
++ (void)handlePlayPauseEventWithInfo:(NSDictionary *)nowPlayingInfo;
++ (void)loadBookDataForASIN:(NSString *)asin;
++ (NSInteger)getCurrentProgressForASIN:(NSString *)asin;
++ (NSInteger)getTotalDurationForASIN:(NSString *)asin;
++ (NSInteger)calculateTotalDurationFromChapters:(NSArray *)chapters;
++ (NSString *)getAudibleDocumentsPath;
++ (void)updateProgressAfterDelay:(NSString *)asin;
 @end
+
+extern NSString *const ChronosProgressUpdateNotification;
