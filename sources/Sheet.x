@@ -29,6 +29,37 @@ static void addChronosGestureToWindow(UIWindow *window)
 
 %hook UIApplication
 %new
+- (void)handleChronosTabBarLongPress:(UILongPressGestureRecognizer *)gesture
+{
+    if (gesture.state == UIGestureRecognizerStateBegan)
+    {
+        UIWindow *keyWindow = nil;
+        for (UIScene *scene in self.connectedScenes)
+        {
+            if (scene.activationState == UISceneActivationStateForegroundActive &&
+                [scene isKindOfClass:[UIWindowScene class]])
+            {
+                UIWindowScene *windowScene = (UIWindowScene *) scene;
+                for (UIWindow *window in windowScene.windows)
+                {
+                    if (window.isKeyWindow)
+                    {
+                        keyWindow = window;
+                        break;
+                    }
+                }
+                if (keyWindow)
+                    break;
+            }
+        }
+        if (keyWindow && keyWindow.rootViewController)
+        {
+            showChronosMenuSheet(keyWindow.rootViewController);
+        }
+    }
+}
+
+%new
 - (void)handleChronosThreeFingerLongPress:(UILongPressGestureRecognizer *)gesture
 {
     if (gesture.state == UIGestureRecognizerStateBegan)
@@ -55,6 +86,72 @@ static void addChronosGestureToWindow(UIWindow *window)
         if (keyWindow && keyWindow.rootViewController)
         {
             showChronosMenuSheet(keyWindow.rootViewController);
+        }
+    }
+}
+%end
+
+%hook UITabBar
+- (void)didAddSubview:(UIView *)subview
+{
+    %orig;
+    for (UIView *view in self.subviews)
+    {
+        if ([view isKindOfClass:NSClassFromString(@"UITabBarButton")])
+        {
+            if (view.frame.origin.x < 100)
+            {
+                NSArray *existingGestures = [view.gestureRecognizers copy];
+                for (UIGestureRecognizer *gesture in existingGestures)
+                {
+                    if ([gesture isKindOfClass:[UILongPressGestureRecognizer class]])
+                    {
+                        [view removeGestureRecognizer:gesture];
+                    }
+                }
+
+                UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc]
+                    initWithTarget:[UIApplication sharedApplication]
+                            action:@selector(handleChronosTabBarLongPress:)];
+                longPress.minimumPressDuration          = 0.7;
+                [view addGestureRecognizer:longPress];
+                break;
+            }
+        }
+    }
+}
+%end
+
+%hook UITabBarController
+- (void)viewDidAppear:(BOOL)animated
+{
+    %orig;
+
+    if (self.tabBar && self.tabBar.items.count > 0)
+    {
+        for (UIView *view in self.tabBar.subviews)
+        {
+            if ([view isKindOfClass:NSClassFromString(@"UITabBarButton")])
+            {
+                if (view.frame.origin.x < 100)
+                {
+                    NSArray *existingGestures = [view.gestureRecognizers copy];
+                    for (UIGestureRecognizer *gesture in existingGestures)
+                    {
+                        if ([gesture isKindOfClass:[UILongPressGestureRecognizer class]])
+                        {
+                            [view removeGestureRecognizer:gesture];
+                        }
+                    }
+
+                    UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc]
+                        initWithTarget:[UIApplication sharedApplication]
+                                action:@selector(handleChronosTabBarLongPress:)];
+                    longPress.minimumPressDuration          = 0.7;
+                    [view addGestureRecognizer:longPress];
+                    break;
+                }
+            }
         }
     }
 }
