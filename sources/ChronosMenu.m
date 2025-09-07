@@ -322,7 +322,9 @@ extern double          totalBookDuration;
     UILabel *versionTextLabel = [self labelWithFont:13 weight:UIFontWeightRegular];
     versionTextLabel.text     = [NSString stringWithFormat:@"v%@", PACKAGE_VERSION];
 
-    UIView *versionChip = [self chipWithIcon:@"tag.fill" label:versionTextLabel];
+    UIControl *versionChip = [self tappableChipWithIcon:@"tag.fill"
+                                                  label:versionTextLabel
+                                                 action:@selector(openChangelog)];
 
     UILabel *githubTextLabel = [self labelWithFont:13 weight:UIFontWeightRegular];
     githubTextLabel.text     = @"GitHub";
@@ -1638,6 +1640,19 @@ extern double          totalBookDuration;
 - (void)openDonate
 {
     NSURL *url = [NSURL URLWithString:@"https://ko-fi.com/castdrian"];
+    if (!url)
+        return;
+    SFSafariViewController *safari = [[SFSafariViewController alloc] initWithURL:url];
+    safari.dismissButtonStyle      = SFSafariViewControllerDismissButtonStyleClose;
+    safari.delegate                = self;
+    safari.modalPresentationStyle  = UIModalPresentationPageSheet;
+    [self.navigationController presentViewController:safari animated:YES completion:nil];
+}
+
+- (void)openChangelog
+{
+    NSURL *url =
+        [NSURL URLWithString:@"https://github.com/castdrian/Chronos/blob/main/CHANGELOG.md"];
     if (!url)
         return;
     SFSafariViewController *safari = [[SFSafariViewController alloc] initWithURL:url];
