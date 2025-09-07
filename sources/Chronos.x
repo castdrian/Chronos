@@ -276,6 +276,10 @@ static NSInteger lastLoggedChapter = -1;
         if (asin.length && ![asin isEqualToString:currentASIN])
         {
             currentASIN = asin;
+            [allChapters removeAllObjects];
+            totalBookDuration = 0.0;
+            lastLoggedElapsed = -1;
+            lastLoggedChapter = -1;
             [Logger notice:LOG_CATEGORY_DEFAULT format:@"ASIN => %@", asin];
         }
     }
