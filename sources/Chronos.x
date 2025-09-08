@@ -175,10 +175,6 @@ static NSInteger lastTotalDuration = -1;
                             if (totalDurationMS > 0)
                             {
                                 NSInteger totalDurationSeconds = totalDurationMS / 1000;
-                                [Logger
-                                      info:LOG_CATEGORY_DEFAULT
-                                    format:@"Calculated total duration from chapters: %ld seconds",
-                                           (long) totalDurationSeconds];
                                 return totalDurationSeconds;
                             }
                         }
@@ -211,7 +207,7 @@ static NSInteger lastTotalDuration = -1;
     lastLoggedElapsed = -1;
     lastTotalDuration = -1;
 
-    [Logger notice:LOG_CATEGORY_DEFAULT format:@"Loading book data for ASIN: %@", asin];
+    [HardcoverAPI autoSwitchToEditionForASIN:asin];
 
     NSInteger totalDuration = [self getTotalDurationForASIN:asin];
     if (totalDuration == -1)
@@ -316,9 +312,6 @@ static NSInteger lastTotalDuration = -1;
         if (isPlaying != lastIsPlaying)
         {
             lastIsPlaying = isPlaying;
-            [Logger info:LOG_CATEGORY_DEFAULT
-                  format:@"Play/pause event: %@", isPlaying ? @"playing" : @"paused"];
-
             [self updateProgressAfterDelay:currentASIN];
         }
     }

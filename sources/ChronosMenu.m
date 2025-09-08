@@ -60,6 +60,11 @@ extern double          totalBookDuration;
     [self setupUI];
     [self loadData];
     [self checkHardcoverAuth];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleAutoSwitchCompleted:)
+                                                 name:@"ChronosAutoSwitchCompleted"
+                                               object:nil];
 }
 
 - (void)viewDidAppear:(BOOL)animated
@@ -78,6 +83,9 @@ extern double          totalBookDuration;
 {
     [super viewWillDisappear:animated];
     [self.progressTimer invalidate];
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:@"ChronosAutoSwitchCompleted"
+                                                  object:nil];
     self.progressTimer   = nil;
     self.lastAlertedASIN = nil;
 }
@@ -831,6 +839,12 @@ extern double          totalBookDuration;
     }
 
     [self refreshAudibleData];
+
+    extern NSString *currentASIN;
+    if (currentASIN && currentASIN.length > 0)
+    {
+        [HardcoverAPI autoSwitchToEditionForASIN:currentASIN];
+    }
 }
 
 - (void)refreshAudibleData
@@ -1457,6 +1471,16 @@ extern double          totalBookDuration;
         {
             [Utilities applySubtleGreenGlowToLayer:pill.layer];
         }
+        else
+        {
+            UITapGestureRecognizer *tapGesture = [[UITapGestureRecognizer alloc]
+                initWithTarget:self
+                        action:@selector(handleCurrentlyReadingTileTap:)];
+            [tile addGestureRecognizer:tapGesture];
+            tile.userInteractionEnabled = YES;
+
+            tile.tag = [self.currentlyReadingItems indexOfObject:item];
+        }
 
         dispatch_async(dispatch_get_main_queue(), ^{
             CGFloat chipWidth    = kPillWidth - 16.0;
@@ -1847,4 +1871,558 @@ extern double          totalBookDuration;
                                    [self formatTime:totalDuration]];
     self.progressLabel.text = progressStr;
 }
+
+- (void)handleCurrentlyReadingTileTap:(UITapGestureRecognizer *)gesture
+{
+    UIView   *tappedTile = gesture.view;
+    NSInteger itemIndex  = tappedTile.tag;
+    if (itemIndex < 0 || itemIndex >= self.currentlyReadingItems.count)
+        return;
+    NSDictionary    *selectedItem = self.currentlyReadingItems[itemIndex];
+    NSString        *bookTitle    = selectedItem[@"title"] ?: @"Unknown Book";
+    extern NSString *currentASIN;
+    if (!currentASIN || currentASIN.length == 0)
+        return;
+
+    BOOL anyTracked = NO;
+    for (NSDictionary *item in self.currentlyReadingItems)
+    {
+        NSArray *itemASINs = item[@"asins"];
+        if ([itemASINs isKindOfClass:[NSArray class]])
+        {
+            for (NSString *asin in itemASINs)
+            {
+                if ([asin isKindOfClass:[NSString class]] && [asin isEqualToString:currentASIN])
+                {
+                    anyTracked = YES;
+                    break;
+                }
+            }
+        }
+        if (anyTracked)
+            break;
+    }
+
+    if (anyTracked)
+    {
+        return;
+    }
+    NSString *alertMessage =
+        [NSString stringWithFormat:@"Create and track a new edition for '%@'?", bookTitle];
+    UIAlertController *confirmAlert =
+        [UIAlertController alertControllerWithTitle:@"Confirm"
+                                            message:alertMessage
+                                     preferredStyle:UIAlertControllerStyleAlert];
+    [confirmAlert addAction:[UIAlertAction actionWithTitle:@"Cancel"
+                                                     style:UIAlertActionStyleCancel
+                                                   handler:nil]];
+    [confirmAlert
+        addAction:[UIAlertAction actionWithTitle:@"Create Edition"
+                                           style:UIAlertActionStyleDefault
+                                         handler:^(UIAlertAction *action) {
+                                             [self createEditionAndSwitchForItem:selectedItem];
+                                         }]];
+    [self presentViewController:confirmAlert animated:YES completion:nil];
+}
+
+- (void)createEditionAndSwitchForItem:(NSDictionary *)item
+{
+    extern NSString *currentASIN;
+    if (!currentASIN || currentASIN.length == 0)
+        return;
+
+    NSNumber *bookId         = item[@"bookId"];
+    NSNumber *userBookId     = item[@"user_book_id"];
+    NSString *bookTitle      = item[@"title"] ?: @"Unknown Book";
+    NSArray  *contributorIds = item[@"contributorIds"] ?: @[];
+
+    if (!bookId || !userBookId)
+    {
+        [self showErrorAlert:@"Missing book information for edition creation."];
+        return;
+    }
+
+    UIAlertController *progressAlert =
+        [UIAlertController alertControllerWithTitle:@"Creating Edition"
+                                            message:@"Please wait..."
+                                     preferredStyle:UIAlertControllerStyleAlert];
+    [self presentViewController:progressAlert animated:YES completion:nil];
+
+    HardcoverAPI *api = [HardcoverAPI sharedInstance];
+
+    [api
+        findEditionByASIN:currentASIN
+               completion:^(NSNumber *existingEditionId, NSError *error) {
+                   dispatch_async(dispatch_get_main_queue(), ^{
+                       if (error)
+                       {
+                           [progressAlert
+                               dismissViewControllerAnimated:YES
+                                                  completion:^{
+                                                      [self
+                                                          showErrorAlert:
+                                                              [NSString
+                                                                  stringWithFormat:
+                                                                      @"Error checking for "
+                                                                      @"existing edition: %@",
+                                                                      error.localizedDescription]];
+                                                  }];
+                           return;
+                       }
+
+                       if (existingEditionId)
+                       {
+                           [self switchToEditionWithAlert:progressAlert
+                                                editionId:existingEditionId
+                                              forUserBook:userBookId];
+                       }
+                       else
+                       {
+                           NSInteger totalDuration =
+                               [AudibleMetadataCapture getTotalDurationForASIN:currentASIN];
+                           if (totalDuration <= 0)
+                           {
+                               [progressAlert
+                                   dismissViewControllerAnimated:YES
+                                                      completion:^{
+                                                          [self
+                                                              showErrorAlert:@"Could not determine "
+                                                                             @"audio duration for "
+                                                                             @"the current book."];
+                                                      }];
+                               return;
+                           }
+
+                           [api
+                               createEditionForBook:bookId
+                                              title:bookTitle
+                                     contributorIds:contributorIds
+                                               asin:currentASIN
+                                       audioSeconds:totalDuration
+                                         completion:^(NSNumber *editionId, NSError *error) {
+                                             dispatch_async(dispatch_get_main_queue(), ^{
+                                                 if (error)
+                                                 {
+                                                     [progressAlert
+                                                         dismissViewControllerAnimated:YES
+                                                                            completion:^{
+                                                                                [self
+                                                                                    showErrorAlert:
+                                                                                        [NSString
+                                                                                            stringWithFormat:
+                                                                                                @"F"
+                                                                                                @"a"
+                                                                                                @"i"
+                                                                                                @"l"
+                                                                                                @"e"
+                                                                                                @"d"
+                                                                                                @" "
+                                                                                                @"t"
+                                                                                                @"o"
+                                                                                                @" "
+                                                                                                @"c"
+                                                                                                @"r"
+                                                                                                @"e"
+                                                                                                @"a"
+                                                                                                @"t"
+                                                                                                @"e"
+                                                                                                @" "
+                                                                                                @"e"
+                                                                                                @"d"
+                                                                                                @"i"
+                                                                                                @"t"
+                                                                                                @"i"
+                                                                                                @"o"
+                                                                                                @"n"
+                                                                                                @":"
+                                                                                                @" "
+                                                                                                @"%"
+                                                                                                @"@",
+                                                                                                error
+                                                                                                    .localizedDescription]];
+                                                                            }];
+                                                     return;
+                                                 }
+
+                                                 if (!editionId)
+                                                 {
+                                                     [progressAlert
+                                                         dismissViewControllerAnimated:YES
+                                                                            completion:^{
+                                                                                [self
+                                                                                    showErrorAlert:
+                                                                                        @"Failed "
+                                                                                        @"to "
+                                                                                        @"create "
+                                                                                        @"edition: "
+                                                                                        @"No "
+                                                                                        @"edition "
+                                                                                        @"ID "
+                                                                                        @"returned"
+                                                                                        @"."];
+                                                                            }];
+                                                     return;
+                                                 }
+
+                                                 [self switchToEditionWithAlert:progressAlert
+                                                                      editionId:editionId
+                                                                    forUserBook:userBookId];
+                                             });
+                                         }];
+                       }
+                   });
+               }];
+switchToEditionAndCreateRead:
+                                                                                    editionId
+                                                                                                 forUserBook:
+                                                                                                     userBookId];
+}];
+});
+}];
+}
+});
+}];
+}
+
+- (void)switchToEditionWithAlert:(UIAlertController *)progressAlert
+                       editionId:(NSNumber *)editionId
+                     forUserBook:(NSNumber *)userBookId
+{
+    HardcoverAPI *api = [HardcoverAPI sharedInstance];
+
+    [api
+        switchUserBookToEdition:userBookId
+                      editionId:editionId
+                     completion:^(BOOL success, NSError *error) {
+                         dispatch_async(dispatch_get_main_queue(), ^{
+                             if (error || !success)
+                             {
+                                 [progressAlert
+                                     dismissViewControllerAnimated:YES
+                                                        completion:^{
+                                                            [self
+                                                                showErrorAlert:
+                                                                    [NSString
+                                                                        stringWithFormat:
+                                                                            @"Failed to switch "
+                                                                            @"edition: %@",
+                                                                            error.localizedDescription
+                                                                                ?: @"Unknown "
+                                                                                   @"error"]];
+                                                        }];
+                                 return;
+                             }
+
+                             extern NSString *currentASIN;
+
+                             [progressAlert
+                                 dismissViewControllerAnimated:YES
+                                                    completion:^{
+                                                        UIAlertController *alert = [UIAlertController
+                                                            alertControllerWithTitle:@"Success"
+                                                                             message:
+                                                                                 @"Successfully "
+                                                                                 @"created and "
+                                                                                 @"switched to new "
+                                                                                 @"edition!"
+                                                                      preferredStyle:
+                                                                          UIAlertControllerStyleAlert];
+                                                        [alert
+                                                            addAction:
+                                                                [UIAlertAction
+                                                                    actionWithTitle:@"OK"
+                                                                              style:
+                                                                                  UIAlertActionStyleDefault
+                                                                            handler:nil]];
+                                                        [self presentViewController:alert
+                                                                           animated:YES
+                                                                         completion:nil];
+                                                        [self refreshCurrentlyReadingData];
+                                                    }];
+                         });
+                     }];
+}
+
+- (void)switchToEdition:(NSNumber *)editionId forUserBook:(NSNumber *)userBookId
+{
+    UIAlertController *progressAlert =
+        [UIAlertController alertControllerWithTitle:@"Switching Edition"
+                                            message:@"Please wait..."
+                                     preferredStyle:UIAlertControllerStyleAlert];
+    [self presentViewController:progressAlert animated:YES completion:nil];
+
+    [self switchToEditionWithAlert:progressAlert editionId:editionId forUserBook:userBookId];
+preferredStyle:
+                                                                          UIAlertControllerStyleAlert];
+                                                                          [alert
+                                                                              addAction:
+                                                                                  [UIAlertAction
+                                                                                      actionWithTitle:
+                                                                                          @"OK"
+                                                                                                style:
+                                                                                                    UIAlertActionStyleDefault
+                                                                                              handler:
+                                                                                                  nil]];
+                                                                          [self
+                                                                              presentViewController:
+                                                                                  alert
+                                                                                           animated:
+                                                                                               YES
+                                                                                         completion:
+                                                                                             nil];
+                                                                          [self
+                                                                              refreshCurrentlyReadingData];
+}];
+});
+}];
+}
+
+- (void)switchToEdition:(NSNumber *)editionId forUserBook:(NSNumber *)userBookId
+{
+    UIAlertController *progressAlert =
+        [UIAlertController alertControllerWithTitle:@"Switching Edition"
+                                            message:@"Please wait..."
+                                     preferredStyle:UIAlertControllerStyleAlert];
+    [self presentViewController:progressAlert animated:YES completion:nil];
+
+    HardcoverAPI *api = [HardcoverAPI sharedInstance];
+    [api
+        switchUserBookToEdition:userBookId
+                      editionId:editionId
+                     completion:^(BOOL success, NSError *error) {
+                         dispatch_async(dispatch_get_main_queue(), ^{
+                             [progressAlert
+                                 dismissViewControllerAnimated:YES
+                                                    completion:^{
+                                                        if (error)
+                                                        {
+                                                            [self
+                                                                showErrorAlert:
+                                                                    [NSString
+                                                                        stringWithFormat:
+                                                                            @"Failed to switch "
+                                                                            @"edition: %@",
+                                                                            error
+                                                                                .localizedDescription]];
+                                                            return;
+                                                        }
+
+                                                        if (!success)
+                                                        {
+                                                            [self showErrorAlert:
+                                                                      @"Failed to switch to the "
+                                                                      @"new edition."];
+                                                            return;
+                                                        }
+
+                                                        [self refreshCurrentlyReadingData];
+                                                    }];
+                         });
+                     }];
+}
+
+- (void)refreshCurrentlyReadingData
+{
+    if (!self.currentlyDisplayedUser || !self.currentlyDisplayedUser.userId)
+        return;
+
+    HardcoverAPI *api = [HardcoverAPI sharedInstance];
+    [api fetchCurrentlyReadingForUserId:self.currentlyDisplayedUser.userId
+                             completion:^(NSArray *items, NSError *error) {
+                                 dispatch_async(dispatch_get_main_queue(), ^{
+                                     if (error)
+                                     {
+                                         [Logger error:LOG_CATEGORY_DEFAULT
+                                                format:@"Failed to refresh currently reading: %@",
+                                                       error.localizedDescription];
+                                         return;
+                                     }
+
+                                     if (items)
+                                     {
+                                         self.currentlyReadingItems = items;
+                                         [self renderCurrentlyReading];
+                                     }
+                                 });
+                             }];
+}
+
+- (void)switchToEditionAndCreateRead:(NSNumber *)editionId forUserBook:(NSNumber *)userBookId
+{
+    HardcoverAPI *api = [HardcoverAPI sharedInstance];
+
+    [api switchUserBookToEdition:userBookId
+                       editionId:editionId
+                      completion:^(BOOL success, NSError *error) {
+                          if (error || !success)
+                          {
+                              [Logger error:LOG_CATEGORY_DEFAULT
+                                     format:@"Edition switch failed: %@",
+                                            error.localizedDescription ?: @"Unknown error"];
+                              return;
+                          }
+
+                          extern NSString *currentASIN;
+                          NSInteger        currentProgress = 0;
+                          if (currentASIN && currentASIN.length > 0)
+                          {
+                              currentProgress =
+                                  [AudibleMetadataCapture getCurrentProgressForASIN:currentASIN];
+                          }
+
+                          [api insertUserBookRead:userBookId
+                                  progressSeconds:currentProgress
+                                        editionId:editionId
+                                       completion:^(NSDictionary *readData, NSError *readError) {
+                                           if (readError)
+                                           {
+                                               [Logger error:LOG_CATEGORY_DEFAULT
+                                                      format:@"Read creation failed: %@",
+                                                             readError.localizedDescription];
+                                           }
+                                           else
+                                           {
+                                               dispatch_async(dispatch_get_main_queue(), ^{
+                                                   [self refreshCurrentlyReadingData];
+                                               });
+                                           }
+                                       }];
+                      }];
+}
+
+- (void)autoSwitchEditionForASIN:(NSString *)asin
+{
+    if (!asin || asin.length == 0)
+        return;
+
+    HardcoverAPI *api = [HardcoverAPI sharedInstance];
+
+    if (!self.currentlyReadingItems || self.currentlyReadingItems.count == 0)
+    {
+        if (api.currentUser && api.currentUser.userId)
+        {
+            [api fetchCurrentlyReadingForUserId:api.currentUser.userId
+                                     completion:^(NSArray *items, NSError *error) {
+                                         if (!error && items && items.count > 0)
+                                         {
+                                             self.currentlyReadingItems = items;
+                                             [self autoSwitchEditionForASIN:asin];
+                                         }
+                                     }];
+        }
+        return;
+    }
+
+    NSDictionary *matchingItem = nil;
+    for (NSDictionary *item in self.currentlyReadingItems)
+    {
+        NSArray *asins = ([item[@"asins"] isKindOfClass:[NSArray class]] ? item[@"asins"] : @[]);
+        for (NSString *bookASIN in asins)
+        {
+            if ([bookASIN isKindOfClass:[NSString class]] && [bookASIN isEqualToString:asin])
+            {
+                matchingItem = item;
+                break;
+            }
+        }
+        if (matchingItem)
+            break;
+    }
+
+    if (!matchingItem)
+    {
+        [Logger notice:LOG_CATEGORY_DEFAULT
+                format:@"No currently reading book matches ASIN: %@", asin];
+        return;
+    }
+
+    NSNumber *userBookId = matchingItem[@"user_book_id"];
+    if (!userBookId)
+    {
+        [Logger error:LOG_CATEGORY_DEFAULT format:@"No user book ID found for matching item"];
+        return;
+    }
+
+    [api findEditionByASIN:asin
+                completion:^(NSNumber *existingEditionId, NSError *error) {
+                    if (error || !existingEditionId)
+                    {
+                        [Logger notice:LOG_CATEGORY_DEFAULT
+                                format:@"No existing edition found for ASIN %@", asin];
+                        return;
+                    }
+
+                    NSArray *currentReads            = matchingItem[@"user_book_reads"];
+                    BOOL     alreadyOnCorrectEdition = NO;
+
+                    if ([currentReads isKindOfClass:[NSArray class]] && currentReads.count > 0)
+                    {
+                        for (NSDictionary *read in currentReads)
+                        {
+                            NSDictionary *edition = read[@"edition"];
+                            if ([edition isKindOfClass:[NSDictionary class]])
+                            {
+                                NSNumber *currentEditionId = edition[@"id"];
+                                if ([currentEditionId isEqual:existingEditionId])
+                                {
+                                    alreadyOnCorrectEdition = YES;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (!alreadyOnCorrectEdition)
+                    {
+                        [Logger notice:LOG_CATEGORY_DEFAULT
+                                format:@"Auto-switching to edition %@ for ASIN %@",
+                                       existingEditionId, asin];
+                        [self switchToEditionAndCreateRead:existingEditionId
+                                               forUserBook:userBookId];
+                    }
+                    else
+                    {
+                        [Logger notice:LOG_CATEGORY_DEFAULT
+                                format:@"Already on correct edition for ASIN %@", asin];
+                    }
+                }];
+}
+
+- (void)showErrorAlert:(NSString *)message
+{
+    UIAlertController *alert =
+        [UIAlertController alertControllerWithTitle:@"Error"
+                                            message:message
+                                     preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK"
+                                              style:UIAlertActionStyleDefault
+                                            handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)handleAutoSwitchCompleted:(NSNotification *)notification
+{
+    [Logger notice:LOG_CATEGORY_DEFAULT
+            format:@"Auto-switch completed, refreshing currently reading items"];
+
+    HardcoverAPI *api = [HardcoverAPI sharedInstance];
+    if (api.isAuthorized && api.currentUser && api.currentUser.userId)
+    {
+        [api fetchCurrentlyReadingForUserId:api.currentUser.userId
+                                 completion:^(NSArray *items, NSError *error) {
+                                     if (!error && items)
+                                     {
+                                         dispatch_async(dispatch_get_main_queue(), ^{
+                                             self.currentlyReadingItems = items;
+                                             HardcoverAPI *api = [HardcoverAPI sharedInstance];
+                                             if (api.currentUser)
+                                             {
+                                                 [self updateHardcoverUI:api.currentUser];
+                                             }
+                                         });
+                                     }
+                                 }];
+    }
+}
+
 @end

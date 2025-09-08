@@ -6,6 +6,12 @@
 #import "Utilities.h"
 #import "HardcoverAPI.h"
 #import "Chronos.h"
+#import "Logger.h"
 
 @interface ChronosMenu : UIViewController
+
+- (void)switchToEditionAndCreateRead:(NSNumber *)editionId forUserBook:(NSNumber *)userBookId;
+- (void)silentlySwitchToEditionAndCreateRead:(NSNumber *)editionId forUserBook:(NSNumber *)userBookId;
+- (void)autoSwitchEditionForASIN:(NSString *)asin;
+
 @end

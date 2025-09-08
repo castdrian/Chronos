@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import "Logger.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -51,6 +52,27 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)makeGraphQLRequestWithQuery:(nonnull NSString *)query
                           variables:(nullable NSDictionary *)variables
                          completion:(void (^ _Nullable)(NSDictionary * _Nullable response, NSError * _Nullable error))completion;
+
+- (void)createEditionForBook:(nonnull NSNumber *)bookId
+                       title:(nonnull NSString *)title
+              contributorIds:(nonnull NSArray<NSNumber *> *)contributorIds
+                        asin:(nonnull NSString *)asin
+                audioSeconds:(NSInteger)audioSeconds
+                  completion:(void (^ _Nullable)(NSNumber * _Nullable editionId, NSError * _Nullable error))completion;
+
+- (void)switchUserBookToEdition:(nonnull NSNumber *)userBookId
+                      editionId:(nonnull NSNumber *)editionId
+                     completion:(void (^ _Nullable)(BOOL success, NSError * _Nullable error))completion;
+
+- (void)insertUserBookRead:(nonnull NSNumber *)userBookId
+           progressSeconds:(NSInteger)seconds
+                 editionId:(nonnull NSNumber *)editionId
+                completion:(void (^ _Nullable)(NSDictionary * _Nullable readData, NSError * _Nullable error))completion;
+
+- (void)findEditionByASIN:(nonnull NSString *)asin
+               completion:(void (^ _Nullable)(NSNumber * _Nullable editionId, NSError * _Nullable error))completion;
+
++ (void)autoSwitchToEditionForASIN:(nonnull NSString *)asin;
 
 @end
 
