@@ -9,13 +9,13 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Added
 
-- added long press gesture recognizer to the home tab bar item to open Chronos menu
+- added long press gesture recognizer to the home tab bar item to open Chronos' menu
 
 ## 1.3.0 - 2025-09-07
 
 ### Changed
 
-- refactored the progress tracking to read metadata from the filesystem instead using of KVC
+- refactored the progress tracking to read metadata from the filesystem instead of using KVC
 
 ## 1.2.1 - 2025-09-07
 

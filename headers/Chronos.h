@@ -13,5 +13,3 @@
 + (NSString *)getAudibleDocumentsPath;
 + (void)updateProgressAfterDelay:(NSString *)asin;
 @end
-
-extern NSString *const ChronosProgressUpdateNotification;

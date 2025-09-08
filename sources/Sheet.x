@@ -182,18 +182,17 @@ void showChronosMenuSheet(UIViewController *presentingVC)
     UINavigationController *navController =
         [[UINavigationController alloc] initWithRootViewController:menuVC];
     navController.modalPresentationStyle = UIModalPresentationPageSheet;
-    if (@available(iOS 15.0, *))
+
+    UISheetPresentationController *sheet = navController.sheetPresentationController;
+    if (sheet)
     {
-        UISheetPresentationController *sheet = navController.sheetPresentationController;
-        if (sheet)
-        {
-            sheet.detents               = @[ [UISheetPresentationControllerDetent mediumDetent] ];
-            sheet.prefersGrabberVisible = YES;
-            sheet.prefersScrollingExpandsWhenScrolledToEdge = YES;
-            sheet.preferredCornerRadius                     = 16.0;
-            sheet.selectedDetentIdentifier = UISheetPresentationControllerDetentIdentifierMedium;
-        }
+        sheet.detents               = @[ [UISheetPresentationControllerDetent mediumDetent] ];
+        sheet.prefersGrabberVisible = YES;
+        sheet.prefersScrollingExpandsWhenScrolledToEdge = YES;
+        sheet.preferredCornerRadius                     = 16.0;
+        sheet.selectedDetentIdentifier = UISheetPresentationControllerDetentIdentifierMedium;
     }
+
     UIBarButtonItem *doneButton =
         [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone
                                                       target:menuVC

@@ -60,16 +60,6 @@ extern double          totalBookDuration;
     [self setupUI];
     [self loadData];
     [self checkHardcoverAuth];
-
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(handleProgressUpdate:)
-                                                 name:@"ChronosProgressUpdateNotification"
-                                               object:nil];
-}
-
-- (void)dealloc
-{
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 - (void)viewDidAppear:(BOOL)animated
@@ -895,45 +885,6 @@ extern double          totalBookDuration;
                 [self saveCachedAudibleData:newData];
             }
         });
-    });
-}
-
-- (void)handleProgressUpdate:(NSNotification *)notification
-{
-    NSDictionary *userInfo = notification.userInfo;
-    if (!userInfo)
-        return;
-
-    NSString *asin     = userInfo[@"asin"];
-    NSNumber *progress = userInfo[@"progress"];
-    NSNumber *total    = userInfo[@"total"];
-
-    if (!asin || !progress || !total)
-        return;
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-        NSString *progressStr = @"--";
-        if ([progress integerValue] >= 0 && [total integerValue] > 0)
-        {
-            NSString *currentStr = [self formatTime:[progress integerValue]];
-            NSString *totalStr   = [self formatTime:[total integerValue]];
-            progressStr          = [NSString stringWithFormat:@"%@ / %@", currentStr, totalStr];
-        }
-
-        if (self.progressLabel)
-        {
-            self.progressLabel.text = progressStr;
-        }
-
-        if (self.currentlyDisplayedAudibleData)
-        {
-            NSMutableDictionary *updatedData   = [self.currentlyDisplayedAudibleData mutableCopy];
-            updatedData[@"progressStr"]        = progressStr;
-            updatedData[@"currentProgress"]    = progress;
-            updatedData[@"totalDuration"]      = total;
-            self.currentlyDisplayedAudibleData = [updatedData copy];
-            [self saveCachedAudibleData:self.currentlyDisplayedAudibleData];
-        }
     });
 }
 

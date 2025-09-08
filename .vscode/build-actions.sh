@@ -1,4 +1,4 @@
-#!/usr/bin/env zsh
+#!/bin/sh
 set -euo pipefail
 
 ACTION="${1:-Package}"
@@ -54,7 +54,6 @@ case "$ACTION" in
     build_package
     [[ -d "$icloud_dir" ]] || { echo "Destination directory missing: $icloud_dir" >&2; exit 1; }
     debs=(packages/*.deb)
-    # Handle glob literal when no match
     if [[ ${debs[1]} == 'packages/*.deb' ]]; then echo "No .deb artifacts found" >&2; exit 1; fi
     clean_dest "${debs[@]}"
     cp -v "${debs[@]}" "$icloud_dir/" || { echo "Copy failed" >&2; exit 1; }

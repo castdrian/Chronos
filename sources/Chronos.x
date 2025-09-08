@@ -1,7 +1,6 @@
 #import "Chronos.h"
 
-NSString       *currentASIN                       = nil;
-NSString *const ChronosProgressUpdateNotification = @"ChronosProgressUpdateNotification";
+NSString *currentASIN = nil;
 
 static double    lastLoggedElapsed = -1;
 static NSInteger lastTotalDuration = -1;
@@ -275,17 +274,6 @@ static NSInteger lastTotalDuration = -1;
                                                          : @"Unknown error"];
                                     }
                                 }];
-
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [[NSNotificationCenter defaultCenter]
-                postNotificationName:ChronosProgressUpdateNotification
-                              object:nil
-                            userInfo:@{
-                                @"asin" : asin,
-                                @"progress" : @(currentProgress),
-                                @"total" : @(totalDuration)
-                            }];
-        });
 
         double completionPercentage = (double) currentProgress / totalDuration;
         if (completionPercentage >= 0.90)
