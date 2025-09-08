@@ -1803,10 +1803,25 @@ extern double          totalBookDuration;
         if (asin.length > 0 && ![asin isEqualToString:self.lastAlertedASIN])
         {
             self.lastAlertedASIN = asin;
+
+            BOOL hasProductionEntitlements = [Utilities hasAudibleProductionEntitlements];
+            BOOL hasGetTaskAllow           = [Utilities hasGetTaskAllowEntitlement];
+
+            NSString *message;
+            if (!hasProductionEntitlements && !hasGetTaskAllow)
+            {
+                message = @"You must download this item to sync progress to Hardcover. "
+                          @"To enable downloads, sideload Audible with a development certificate "
+                          @"(get-task-allow entitlement).";
+            }
+            else
+            {
+                message = @"You must download this item to sync progress to Hardcover.";
+            }
+
             UIAlertController *alert =
                 [UIAlertController alertControllerWithTitle:@"Book Not Downloaded"
-                                                    message:@"You must download this item to "
-                                                            @"sync progress to Hardcover."
+                                                    message:message
                                              preferredStyle:UIAlertControllerStyleAlert];
             [alert addAction:[UIAlertAction actionWithTitle:@"OK"
                                                       style:UIAlertActionStyleDefault

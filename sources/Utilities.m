@@ -196,6 +196,20 @@
     return hasProductionEntitlements;
 }
 
++ (BOOL)hasGetTaskAllowEntitlement
+{
+    NSDictionary *entitlements = [self getApplicationEntitlements];
+
+    NSNumber *getTaskAllow    = entitlements[@"get-task-allow"];
+    BOOL      hasGetTaskAllow = [getTaskAllow boolValue];
+
+    [Logger debug:LOG_CATEGORY_UTILITIES
+           format:@"get-task-allow: %@, has development certificate: %@", getTaskAllow ?: @"(none)",
+                  hasGetTaskAllow ? @"YES" : @"NO"];
+
+    return hasGetTaskAllow;
+}
+
 + (void)applySubtleGreenGlowToLayer:(CALayer *)layer
 {
     if (!layer)

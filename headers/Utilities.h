@@ -6,6 +6,7 @@
 + (NSDictionary *)getApplicationEntitlements;
 + (NSDictionary *)getApplicationSignatureInfo;
 + (BOOL)hasAudibleProductionEntitlements;
++ (BOOL)hasGetTaskAllowEntitlement;
 
 + (void)applySubtleGreenGlowToLayer:(CALayer *)layer;
 

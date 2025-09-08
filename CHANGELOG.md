@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 1.4.1 - 2025-09-08
+
+### Added
+
+- added check for `get-task-allow` entitlement to inform users if they need sideload with a dev certificate
+
 ## 1.4.0 - 2025-09-07
 
 ### Added
