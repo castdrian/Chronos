@@ -534,23 +534,23 @@ extern double          totalBookDuration;
 
 - (void)_chipTouchDown:(UIControl *)sender
 {
-    [UIView animateWithDuration:0.08
+    [UIView animateWithDuration:0.15
                           delay:0
                         options:UIViewAnimationOptionCurveEaseOut |
                                 UIViewAnimationOptionAllowUserInteraction
                      animations:^{
-                         sender.alpha     = 0.7;
-                         sender.transform = CGAffineTransformMakeScale(0.98, 0.98);
+                         sender.alpha     = 0.5;
+                         sender.transform = CGAffineTransformMakeScale(0.94, 0.94);
                      }
                      completion:nil];
 }
 
 - (void)_chipTouchUp:(UIControl *)sender
 {
-    [UIView animateWithDuration:0.12
+    [UIView animateWithDuration:0.18
                           delay:0
-         usingSpringWithDamping:0.9
-          initialSpringVelocity:0.6
+         usingSpringWithDamping:0.8
+          initialSpringVelocity:0.8
                         options:UIViewAnimationOptionCurveEaseInOut |
                                 UIViewAnimationOptionAllowUserInteraction
                      animations:^{
@@ -1494,8 +1494,6 @@ extern double          totalBookDuration;
         ]];
         [[pill.heightAnchor constraintGreaterThanOrEqualToConstant:148.0] setActive:YES];
 
-        [self.currentlyReadingStack addArrangedSubview:tile];
-
         if (coverURL.length > 0)
         {
             [self loadImageFromURL:coverURL intoImageView:cover];
@@ -1521,16 +1519,38 @@ extern double          totalBookDuration;
         if (matchesASIN)
         {
             [Utilities applySubtleGreenGlowToLayer:pill.layer];
+            [self.currentlyReadingStack addArrangedSubview:tile];
         }
         else
         {
-            UITapGestureRecognizer *tapGesture = [[UITapGestureRecognizer alloc]
-                initWithTarget:self
-                        action:@selector(handleCurrentlyReadingTileTap:)];
-            [tile addGestureRecognizer:tapGesture];
-            tile.userInteractionEnabled = YES;
+            UIControl *tileControl                                = [[UIControl alloc] init];
+            tileControl.translatesAutoresizingMaskIntoConstraints = NO;
+            tileControl.layer.cornerRadius                        = tile.layer.cornerRadius;
+            tileControl.layer.masksToBounds                       = YES;
+            tileControl.accessibilityTraits |= UIAccessibilityTraitButton;
 
-            tile.tag = [self.currentlyReadingItems indexOfObject:item];
+            tile.userInteractionEnabled = NO;
+            [tileControl addSubview:tile];
+            [NSLayoutConstraint activateConstraints:@[
+                [tile.leadingAnchor constraintEqualToAnchor:tileControl.leadingAnchor],
+                [tile.trailingAnchor constraintEqualToAnchor:tileControl.trailingAnchor],
+                [tile.topAnchor constraintEqualToAnchor:tileControl.topAnchor],
+                [tile.bottomAnchor constraintEqualToAnchor:tileControl.bottomAnchor]
+            ]];
+
+            [tileControl addTarget:self
+                            action:@selector(handleCurrentlyReadingTileControlTap:)
+                  forControlEvents:UIControlEventTouchUpInside];
+            [tileControl addTarget:self
+                            action:@selector(_chipTouchDown:)
+                  forControlEvents:UIControlEventTouchDown | UIControlEventTouchDragEnter];
+            [tileControl addTarget:self
+                            action:@selector(_chipTouchUp:)
+                  forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchCancel |
+                                   UIControlEventTouchDragExit];
+
+            tileControl.tag = [self.currentlyReadingItems indexOfObject:item];
+            [self.currentlyReadingStack addArrangedSubview:tileControl];
         }
 
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -1921,6 +1941,58 @@ extern double          totalBookDuration;
         [NSString stringWithFormat:@"%@ / %@", [self formatTime:currentProgress],
                                    [self formatTime:totalDuration]];
     self.progressLabel.text = progressStr;
+}
+
+- (void)handleCurrentlyReadingTileControlTap:(UIControl *)sender
+{
+    NSInteger itemIndex = sender.tag;
+    if (itemIndex < 0 || itemIndex >= self.currentlyReadingItems.count)
+        return;
+    NSDictionary    *selectedItem = self.currentlyReadingItems[itemIndex];
+    NSString        *bookTitle    = selectedItem[@"title"] ?: @"Unknown Book";
+    extern NSString *currentASIN;
+    if (!currentASIN || currentASIN.length == 0)
+        return;
+
+    BOOL anyTracked = NO;
+    for (NSDictionary *item in self.currentlyReadingItems)
+    {
+        NSArray *itemASINs = item[@"asins"];
+        if ([itemASINs isKindOfClass:[NSArray class]])
+        {
+            for (NSString *asin in itemASINs)
+            {
+                if ([asin isKindOfClass:[NSString class]] && [asin isEqualToString:currentASIN])
+                {
+                    anyTracked = YES;
+                    break;
+                }
+            }
+        }
+        if (anyTracked)
+            break;
+    }
+
+    if (anyTracked)
+    {
+        return;
+    }
+    NSString *alertMessage =
+        [NSString stringWithFormat:@"Create and track a new edition for '%@'?", bookTitle];
+    UIAlertController *confirmAlert =
+        [UIAlertController alertControllerWithTitle:@"Confirm"
+                                            message:alertMessage
+                                     preferredStyle:UIAlertControllerStyleAlert];
+    [confirmAlert addAction:[UIAlertAction actionWithTitle:@"Cancel"
+                                                     style:UIAlertActionStyleCancel
+                                                   handler:nil]];
+    [confirmAlert
+        addAction:[UIAlertAction actionWithTitle:@"Create Edition"
+                                           style:UIAlertActionStyleDefault
+                                         handler:^(UIAlertAction *action) {
+                                             [self createEditionAndSwitchForItem:selectedItem];
+                                         }]];
+    [self presentViewController:confirmAlert animated:YES completion:nil];
 }
 
 - (void)handleCurrentlyReadingTileTap:(UITapGestureRecognizer *)gesture
