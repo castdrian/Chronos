@@ -1157,7 +1157,13 @@ extern double          totalBookDuration;
 
     NSInteger books = user.books_count ? user.books_count.integerValue : 0;
 
-    [self loadCurrentlyReadingForUser:user];
+    BOOL shouldLoadCurrentlyReading =
+        ![self isUser:self.currentlyDisplayedUser equalToUser:user] || !self.currentlyReadingItems;
+
+    if (shouldLoadCurrentlyReading)
+    {
+        [self loadCurrentlyReadingForUser:user];
+    }
 
     NSInteger followers           = user.followers_count ? user.followers_count.integerValue : 0;
     self.booksCountLabel.text     = [NSString stringWithFormat:@"%ld", (long) books];
@@ -1278,42 +1284,87 @@ extern double          totalBookDuration;
     [[HardcoverAPI sharedInstance]
         fetchCurrentlyReadingForUserId:user.userId
                             completion:^(NSArray *items, NSError *error) {
-                                if (error)
-                                {
-                                    return;
-                                }
+                                dispatch_async(dispatch_get_main_queue(), ^{
+                                    if (error)
+                                    {
+                                        return;
+                                    }
 
-                                if (![weakSelf isCurrentlyReadingEqual:previousItems to:items])
-                                {
-                                    weakSelf.currentlyReadingItems = items;
-                                    [weakSelf renderCurrentlyReading];
-                                }
-                                else
-                                {
-                                    weakSelf.currentlyReadingItems = items;
-                                }
+                                    if (![weakSelf isCurrentlyReadingEqual:previousItems to:items])
+                                    {
+                                        weakSelf.currentlyReadingItems = items;
+                                        [weakSelf renderCurrentlyReading];
+                                    }
+                                    else
+                                    {
+                                        weakSelf.currentlyReadingItems = items;
+                                    }
 
-                                [weakSelf saveCachedHardcoverUser:user
-                                        withCurrentlyReadingItems:items];
+                                    [weakSelf saveCachedHardcoverUser:user
+                                            withCurrentlyReadingItems:items];
+                                });
                             }];
 }
 
 - (void)renderCurrentlyReading
 {
-    for (UIView *v in self.currentlyReadingStack.arrangedSubviews)
-    {
-        [self.currentlyReadingStack removeArrangedSubview:v];
-        [v removeFromSuperview];
-    }
-    if (self.currentlyReadingItems.count == 0)
-    {
-        self.currentlyReadingContainer.hidden = YES;
-        [self adjustHardcoverSectionBottomTo:self.userProfileView];
-        return;
-    }
-    self.currentlyReadingContainer.hidden = NO;
-    [self adjustHardcoverSectionBottomTo:self.currentlyReadingContainer];
+    BOOL wasVisible      = !self.currentlyReadingContainer.hidden;
+    BOOL shouldBeVisible = (self.currentlyReadingItems.count > 0);
 
+    if (shouldBeVisible)
+    {
+        if (wasVisible)
+        {
+            [UIView transitionWithView:self.currentlyReadingStack
+                duration:0.25
+                options:UIViewAnimationOptionTransitionCrossDissolve
+                animations:^{
+                    for (UIView *v in self.currentlyReadingStack.arrangedSubviews)
+                    {
+                        [self.currentlyReadingStack removeArrangedSubview:v];
+                        [v removeFromSuperview];
+                    }
+
+                    [self addCurrentlyReadingContent];
+                }
+                completion:^(BOOL finished) { [self configureSheetPresentation]; }];
+        }
+        else
+        {
+            [self addCurrentlyReadingContent];
+
+            self.currentlyReadingContainer.hidden = NO;
+            self.currentlyReadingContainer.alpha  = 0.0;
+            [self adjustHardcoverSectionBottomTo:self.currentlyReadingContainer];
+
+            [UIView animateWithDuration:0.3
+                animations:^{ self.currentlyReadingContainer.alpha = 1.0; }
+                completion:^(BOOL finished) { [self configureSheetPresentation]; }];
+        }
+    }
+    else
+    {
+        if (wasVisible)
+        {
+            [UIView animateWithDuration:0.3
+                animations:^{ self.currentlyReadingContainer.alpha = 0.0; }
+                completion:^(BOOL finished) {
+                    self.currentlyReadingContainer.hidden = YES;
+                    self.currentlyReadingContainer.alpha  = 1.0;
+                    [self adjustHardcoverSectionBottomTo:self.userProfileView];
+                    [self configureSheetPresentation];
+                }];
+        }
+        else
+        {
+            self.currentlyReadingContainer.hidden = YES;
+            [self adjustHardcoverSectionBottomTo:self.userProfileView];
+        }
+    }
+}
+
+- (void)addCurrentlyReadingContent
+{
     extern NSString *currentASIN;
     const CGFloat    kPillWidth = 96.0;
     for (NSDictionary *item in self.currentlyReadingItems)
@@ -2072,16 +2123,6 @@ extern double          totalBookDuration;
                        }
                    });
                }];
-switchToEditionAndCreateRead:
-                                                                                    editionId
-                                                                                                 forUserBook:
-                                                                                                     userBookId];
-}];
-});
-}];
-}
-});
-}];
 }
 
 - (void)switchToEditionWithAlert:(UIAlertController *)progressAlert
@@ -2141,40 +2182,6 @@ switchToEditionAndCreateRead:
                                                     }];
                          });
                      }];
-}
-
-- (void)switchToEdition:(NSNumber *)editionId forUserBook:(NSNumber *)userBookId
-{
-    UIAlertController *progressAlert =
-        [UIAlertController alertControllerWithTitle:@"Switching Edition"
-                                            message:@"Please wait..."
-                                     preferredStyle:UIAlertControllerStyleAlert];
-    [self presentViewController:progressAlert animated:YES completion:nil];
-
-    [self switchToEditionWithAlert:progressAlert editionId:editionId forUserBook:userBookId];
-preferredStyle:
-                                                                          UIAlertControllerStyleAlert];
-                                                                          [alert
-                                                                              addAction:
-                                                                                  [UIAlertAction
-                                                                                      actionWithTitle:
-                                                                                          @"OK"
-                                                                                                style:
-                                                                                                    UIAlertActionStyleDefault
-                                                                                              handler:
-                                                                                                  nil]];
-                                                                          [self
-                                                                              presentViewController:
-                                                                                  alert
-                                                                                           animated:
-                                                                                               YES
-                                                                                         completion:
-                                                                                             nil];
-                                                                          [self
-                                                                              refreshCurrentlyReadingData];
-}];
-});
-}];
 }
 
 - (void)switchToEdition:(NSNumber *)editionId forUserBook:(NSNumber *)userBookId

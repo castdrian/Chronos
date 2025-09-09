@@ -11,7 +11,6 @@
 @interface ChronosMenu : UIViewController
 
 - (void)switchToEditionAndCreateRead:(NSNumber *)editionId forUserBook:(NSNumber *)userBookId;
-- (void)silentlySwitchToEditionAndCreateRead:(NSNumber *)editionId forUserBook:(NSNumber *)userBookId;
 - (void)autoSwitchEditionForASIN:(NSString *)asin;
 
 @end
