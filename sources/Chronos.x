@@ -218,7 +218,6 @@ static NSInteger lastTotalDuration = -1;
     }
 
     lastTotalDuration = totalDuration;
-    [Logger info:LOG_CATEGORY_DEFAULT format:@"Book duration: %ld seconds", (long) totalDuration];
 }
 
 + (void)updateProgressAfterDelay:(NSString *)asin

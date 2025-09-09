@@ -2386,18 +2386,8 @@ extern double          totalBookDuration;
                                   progressSeconds:currentProgress
                                         editionId:editionId
                                        completion:^(NSDictionary *readData, NSError *readError) {
-                                           if (readError)
-                                           {
-                                               [Logger error:LOG_CATEGORY_DEFAULT
-                                                      format:@"Read creation failed: %@",
-                                                             readError.localizedDescription];
-                                           }
-                                           else
-                                           {
-                                               dispatch_async(dispatch_get_main_queue(), ^{
-                                                   [self refreshCurrentlyReadingData];
-                                               });
-                                           }
+                                           dispatch_async(dispatch_get_main_queue(),
+                                                          ^{ [self refreshCurrentlyReadingData]; });
                                        }];
                       }];
 }
@@ -2410,15 +2400,10 @@ extern double          totalBookDuration;
     HardcoverAPI *api = [HardcoverAPI sharedInstance];
 
     if (!api.isAuthorized || !api.currentUser || !api.currentUser.userId)
-    {
-        [Logger info:LOG_CATEGORY_DEFAULT format:@"Auto-switch skipped: not authorized"];
         return;
-    }
 
     if (!self.currentlyReadingItems || self.currentlyReadingItems.count == 0)
     {
-        [Logger info:LOG_CATEGORY_DEFAULT
-              format:@"Auto-switch: fetching currently reading items first"];
         [api fetchCurrentlyReadingForUserId:api.currentUser.userId
                                  completion:^(NSArray *items, NSError *error) {
                                      if (!error && items && items.count > 0)
@@ -2427,12 +2412,6 @@ extern double          totalBookDuration;
                                              self.currentlyReadingItems = items;
                                              [self performAutoSwitchForASIN:asin withItems:items];
                                          });
-                                     }
-                                     else
-                                     {
-                                         [Logger info:LOG_CATEGORY_DEFAULT
-                                               format:@"No currently reading items found for "
-                                                      @"auto-switch"];
                                      }
                                  }];
         return;
@@ -2463,28 +2442,17 @@ extern double          totalBookDuration;
     }
 
     if (!matchingItem)
-    {
-        [Logger notice:LOG_CATEGORY_DEFAULT
-                format:@"No currently reading book matches ASIN: %@", asin];
         return;
-    }
 
     NSNumber *userBookId = matchingItem[@"user_book_id"];
     if (!userBookId)
-    {
-        [Logger error:LOG_CATEGORY_DEFAULT format:@"No user book ID found for matching item"];
         return;
-    }
 
     HardcoverAPI *api = [HardcoverAPI sharedInstance];
     [api findEditionByASIN:asin
                 completion:^(NSNumber *existingEditionId, NSError *error) {
                     if (error || !existingEditionId)
-                    {
-                        [Logger notice:LOG_CATEGORY_DEFAULT
-                                format:@"No existing edition found for ASIN %@", asin];
                         return;
-                    }
 
                     NSArray *currentReads            = matchingItem[@"user_book_reads"];
                     BOOL     alreadyOnCorrectEdition = NO;
@@ -2508,18 +2476,10 @@ extern double          totalBookDuration;
 
                     if (!alreadyOnCorrectEdition)
                     {
-                        [Logger notice:LOG_CATEGORY_DEFAULT
-                                format:@"Auto-switching to edition %@ for ASIN %@",
-                                       existingEditionId, asin];
                         dispatch_async(dispatch_get_main_queue(), ^{
                             [self switchToEditionAndCreateRead:existingEditionId
                                                    forUserBook:userBookId];
                         });
-                    }
-                    else
-                    {
-                        [Logger notice:LOG_CATEGORY_DEFAULT
-                                format:@"Already on correct edition for ASIN %@", asin];
                     }
                 }];
 }
@@ -2538,9 +2498,6 @@ extern double          totalBookDuration;
 
 - (void)handleAutoSwitchCompleted:(NSNotification *)notification
 {
-    [Logger notice:LOG_CATEGORY_DEFAULT
-            format:@"Auto-switch completed, refreshing currently reading items"];
-
     HardcoverAPI *api = [HardcoverAPI sharedInstance];
     if (api.isAuthorized && api.currentUser && api.currentUser.userId)
     {

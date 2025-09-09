@@ -189,10 +189,6 @@
 
     BOOL hasProductionEntitlements = [teamIdentifier isEqualToString:@"5WD9C99DFM"];
 
-    [Logger debug:LOG_CATEGORY_UTILITIES
-           format:@"Team identifier: %@, has production entitlements: %@",
-                  teamIdentifier ?: @"(none)", hasProductionEntitlements ? @"YES" : @"NO"];
-
     return hasProductionEntitlements;
 }
 
@@ -202,10 +198,6 @@
 
     NSNumber *getTaskAllow    = entitlements[@"get-task-allow"];
     BOOL      hasGetTaskAllow = [getTaskAllow boolValue];
-
-    [Logger debug:LOG_CATEGORY_UTILITIES
-           format:@"get-task-allow: %@, has development certificate: %@", getTaskAllow ?: @"(none)",
-                  hasGetTaskAllow ? @"YES" : @"NO"];
 
     return hasGetTaskAllow;
 }

@@ -1530,203 +1530,124 @@
 + (void)autoSwitchToEditionForASIN:(NSString *)asin
 {
     if (!asin || asin.length == 0)
-    {
         return;
-    }
 
     HardcoverAPI *api = [HardcoverAPI sharedInstance];
     if (!api.apiToken || api.apiToken.length == 0)
+        return;
+
+    if (!api.isAuthorized || !api.currentUser)
     {
+        [api authorizeWithCompletion:^(BOOL success, HardcoverUser *user, NSError *error) {
+            if (success && user)
+            {
+                [HardcoverAPI autoSwitchToEditionForASIN:asin];
+            }
+        }];
         return;
     }
 
-    [api
-        findEditionByASIN:asin
-               completion:^(NSNumber *existingEditionId, NSError *error) {
-                   if (error)
-                   {
-                       [Logger
-                            error:LOG_CATEGORY_DEFAULT
-                           format:@"Error finding edition: %@", error.localizedDescription];
-                       return;
-                   }
+    [api refreshUserWithCompletion:^(BOOL success, HardcoverUser *user, NSError *userError) {
+        if (!success || !user || !user.userId)
+            return;
 
-                   if (!existingEditionId)
-                   {
-                       [Logger notice:LOG_CATEGORY_DEFAULT
-                               format:@"No existing edition found for ASIN: %@", asin];
-                       return;
-                   }
+        [api
+            fetchCurrentlyReadingForUserId:user.userId
+                                completion:^(NSArray *items, NSError *crError) {
+                                    if (crError || !items || items.count == 0)
+                                        return;
 
-                   [Logger notice:LOG_CATEGORY_DEFAULT
-                           format:@"Found existing edition ID: %@", existingEditionId];
+                                    __block BOOL foundMatch = NO;
 
-                   [api refreshUserWithCompletion:^(BOOL success, HardcoverUser *user,
-                                                    NSError *userError) {
-                       if (!success || !user || !user.userId)
-                       {
-                           [Logger error:LOG_CATEGORY_DEFAULT format:@"Failed to get user"];
-                           return;
-                       }
+                                    for (NSDictionary *item in items)
+                                    {
+                                        NSNumber *bookId     = item[@"bookId"];
+                                        NSNumber *userBookId = item[@"user_book_id"];
 
-                       [api
-                           fetchCurrentlyReadingForUserId:user.userId
-                                               completion:^(NSArray *items, NSError *crError) {
-                                                   if (crError)
-                                                   {
-                                                       [Logger error:LOG_CATEGORY_DEFAULT
-                                                              format:@"Error fetching "
-                                                                     @"currently reading: %@",
-                                                                     crError.localizedDescription];
-                                                       return;
-                                                   }
+                                        if (!bookId || !userBookId)
+                                            continue;
 
-                                                   if (!items || items.count == 0)
-                                                   {
-                                                       [Logger notice:LOG_CATEGORY_DEFAULT
-                                                               format:@"No currently reading books"];
-                                                       return;
-                                                   }
+                                        [api
+                                            fetchEditionsForBookId:bookId
+                                                        completion:^(NSArray *editions,
+                                                                     NSError *editionError) {
+                                                            if (foundMatch)
+                                                                return;
 
-                                                   [Logger notice:LOG_CATEGORY_DEFAULT
-                                                           format:@"Found %lu currently ",
-                                                                  @"reading books",
-                                                                  (unsigned long) items.count];
+                                                            if (editionError || !editions ||
+                                                                editions.count == 0)
+                                                                return;
 
-                                                   [Logger notice:LOG_CATEGORY_DEFAULT
-                                                           format:@"Items array: %@", items];
+                                                            NSNumber *targetEditionId = nil;
+                                                            for (NSDictionary *edition in editions)
+                                                            {
+                                                                NSString *editionASIN =
+                                                                    edition[@"asin"];
+                                                                if ([editionASIN
+                                                                        isKindOfClass:[NSString
+                                                                                          class]] &&
+                                                                    [editionASIN
+                                                                        isEqualToString:asin])
+                                                                {
+                                                                    targetEditionId =
+                                                                        edition[@"id"];
+                                                                    break;
+                                                                }
+                                                            }
 
-                                                   for (NSDictionary *item in items)
-                                                   {
-                                                       NSNumber *bookId     = item[@"bookId"];
-                                                       NSNumber *userBookId = item[@"user_book_id"];
-                                                       NSNumber *currentEditionId =
-                                                           item[@"edition_id"];
+                                                            if (targetEditionId)
+                                                            {
+                                                                foundMatch = YES;
 
-                                                       if (!bookId || !userBookId)
-                                                       {
-                                                           continue;
-                                                       }
+                                                                NSArray *currentReads =
+                                                                    item[@"user_book_reads"];
+                                                                BOOL alreadyOnCorrectEdition = NO;
 
-                                                       if (currentEditionId &&
-                                                           [currentEditionId
-                                                               isEqualToNumber:existingEditionId])
-                                                       {
-                                                           [Logger
-                                                               notice:LOG_CATEGORY_DEFAULT
-                                                               format:@"Already on target "
-                                                                      @"edition, skipping"];
-                                                           return;
-                                                       }
+                                                                if ([currentReads
+                                                                        isKindOfClass:[NSArray
+                                                                                          class]] &&
+                                                                    currentReads.count > 0)
+                                                                {
+                                                                    for (NSDictionary
+                                                                             *read in currentReads)
+                                                                    {
+                                                                        NSDictionary *edition =
+                                                                            read[@"edition"];
+                                                                        if ([edition
+                                                                                isKindOfClass:
+                                                                                    [NSDictionary
+                                                                                        class]])
+                                                                        {
+                                                                            NSNumber
+                                                                                *currentEditionId =
+                                                                                    edition[@"id"];
+                                                                            if ([currentEditionId
+                                                                                    isEqual:
+                                                                                        targetEditionId])
+                                                                            {
+                                                                                alreadyOnCorrectEdition =
+                                                                                    YES;
+                                                                                break;
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
 
-                                                       [api
-                                                           fetchEditionsForBookId:bookId
-                                                                       completion:^(
-                                                                           NSArray *editions,
-                                                                           NSError *editionError) {
-                                                                           if (editionError)
-                                                                           {
-                                                                               [Logger
-                                                                                    error:
-                                                                                        LOG_CATEGORY_DEFAULT
-                                                                                   format:
-                                                                                       @"Error "
-                                                                                       @"fetching "
-                                                                                       @"editions "
-                                                                                       @"for book "
-                                                                                       @"%@: %@",
-                                                                                       bookId,
-                                                                                       editionError
-                                                                                           .localizedDescription];
-                                                                               return;
-                                                                           }
-
-                                                                           if (!editions)
-                                                                           {
-                                                                               [Logger
-                                                                                   notice:
-                                                                                       LOG_CATEGORY_DEFAULT
-                                                                                   format:
-                                                                                       @"No "
-                                                                                       @"editions "
-                                                                                       @"found for "
-                                                                                       @"book %@",
-                                                                                       bookId];
-                                                                               return;
-                                                                           }
-
-                                                                           [Logger
-                                                                               notice:
-                                                                                   LOG_CATEGORY_DEFAULT
-                                                                               format:
-                                                                                   @"Found "
-                                                                                   @"%lu editions "
-                                                                                   @"for book %@",
-                                                                                   (unsigned long)
-                                                                                       editions
-                                                                                           .count,
-                                                                                   bookId];
-
-                                                                           for (NSDictionary
-                                                                                    *edition in
-                                                                                        editions)
-                                                                           {
-                                                                               NSNumber *editionId =
-                                                                                   edition[@"id"];
-                                                                               [Logger
-                                                                                   notice:
-                                                                                       LOG_CATEGORY_DEFAULT
-                                                                                   format:
-                                                                                       @"Checking "
-                                                                                       @"edition "
-                                                                                       @"ID %@ "
-                                                                                       @"against "
-                                                                                       @"target %@",
-                                                                                       editionId,
-                                                                                       existingEditionId];
-
-                                                                               if ([editionId
-                                                                                       isEqualToNumber:
-                                                                                           existingEditionId])
-                                                                               {
-                                                                                   [Logger
-                                                                                       notice:
-                                                                                           LOG_CATEGORY_DEFAULT
-                                                                                       format:
-                                                                                           @"Switch"
-                                                                                           @"ing "
-                                                                                           @"user "
-                                                                                           @"book "
-                                                                                           @"%@ to "
-                                                                                           @"editio"
-                                                                                           @"n %@",
-                                                                                           userBookId,
-                                                                                           existingEditionId];
-                                                                                   [api
-                                                                                       performSilentEditionSwitch:
-                                                                                           existingEditionId
-                                                                                                      forUserBook:
-                                                                                                          userBookId
-                                                                                                         withASIN:
-                                                                                                             asin];
-                                                                                   return;
-                                                                               }
-                                                                           }
-
-                                                                           [Logger
-                                                                               notice:
-                                                                                   LOG_CATEGORY_DEFAULT
-                                                                               format:
-                                                                                   @"No "
-                                                                                   @"matching "
-                                                                                   @"edition found "
-                                                                                   @"in book %@",
-                                                                                   bookId];
-                                                                       }];
-                                                   }
-                                               }];
-                   }];
-               }];
+                                                                if (!alreadyOnCorrectEdition)
+                                                                {
+                                                                    [api
+                                                                        performSilentEditionSwitch:
+                                                                            targetEditionId
+                                                                                       forUserBook:
+                                                                                           userBookId
+                                                                                          withASIN:
+                                                                                              asin];
+                                                                }
+                                                            }
+                                                        }];
+                                    }
+                                }];
+    }];
 }
 
 - (void)performSilentEditionSwitch:(NSNumber *)editionId
@@ -1744,8 +1665,23 @@
                                return;
                            }
 
-                           [Logger notice:LOG_CATEGORY_DEFAULT
-                                   format:@"Successfully auto-switched to edition %@", editionId];
+                           NSInteger currentProgress = 0;
+                           if (asin && asin.length > 0)
+                           {
+                               currentProgress =
+                                   [AudibleMetadataCapture getCurrentProgressForASIN:asin];
+                           }
+
+                           [self insertUserBookRead:userBookId
+                                    progressSeconds:currentProgress
+                                          editionId:editionId
+                                         completion:^(NSDictionary *readData, NSError *readError) {
+                                             dispatch_async(dispatch_get_main_queue(), ^{
+                                                 [[NSNotificationCenter defaultCenter]
+                                                     postNotificationName:@"AutoSwitchCompleted"
+                                                                   object:nil];
+                                             });
+                                         }];
                        }];
 }
 

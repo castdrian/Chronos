@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Added
 
-- added ability to automatically create and switch to a new edition when tapping a book item whilst no items are being tracked
+- added ability to automatically create and switch to a new or existing edition when tapping a book item whilst no items are being tracked
 
 ## 1.4.1 - 2025-09-08
 
