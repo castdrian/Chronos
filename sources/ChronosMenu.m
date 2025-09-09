@@ -1372,6 +1372,27 @@ extern double          totalBookDuration;
 {
     extern NSString *currentASIN;
     const CGFloat    kPillWidth = 96.0;
+
+    BOOL anyItemTracked = NO;
+    if (currentASIN && currentASIN.length > 0)
+    {
+        for (NSDictionary *item in self.currentlyReadingItems)
+        {
+            NSArray *asins =
+                ([item[@"asins"] isKindOfClass:[NSArray class]] ? item[@"asins"] : @[]);
+            for (NSString *asin in asins)
+            {
+                if ([asin isKindOfClass:[NSString class]] && [asin isEqualToString:currentASIN])
+                {
+                    anyItemTracked = YES;
+                    break;
+                }
+            }
+            if (anyItemTracked)
+                break;
+        }
+    }
+
     for (NSDictionary *item in self.currentlyReadingItems)
     {
         NSString *title    = item[@"title"] ?: @"";
@@ -1528,34 +1549,41 @@ extern double          totalBookDuration;
         }
         else
         {
-            UIControl *tileControl                                = [[UIControl alloc] init];
-            tileControl.translatesAutoresizingMaskIntoConstraints = NO;
-            tileControl.layer.cornerRadius                        = tile.layer.cornerRadius;
-            tileControl.layer.masksToBounds                       = YES;
-            tileControl.accessibilityTraits |= UIAccessibilityTraitButton;
+            if (anyItemTracked)
+            {
+                [self.currentlyReadingStack addArrangedSubview:tile];
+            }
+            else
+            {
+                UIControl *tileControl                                = [[UIControl alloc] init];
+                tileControl.translatesAutoresizingMaskIntoConstraints = NO;
+                tileControl.layer.cornerRadius                        = tile.layer.cornerRadius;
+                tileControl.layer.masksToBounds                       = YES;
+                tileControl.accessibilityTraits |= UIAccessibilityTraitButton;
 
-            tile.userInteractionEnabled = NO;
-            [tileControl addSubview:tile];
-            [NSLayoutConstraint activateConstraints:@[
-                [tile.leadingAnchor constraintEqualToAnchor:tileControl.leadingAnchor],
-                [tile.trailingAnchor constraintEqualToAnchor:tileControl.trailingAnchor],
-                [tile.topAnchor constraintEqualToAnchor:tileControl.topAnchor],
-                [tile.bottomAnchor constraintEqualToAnchor:tileControl.bottomAnchor]
-            ]];
+                tile.userInteractionEnabled = NO;
+                [tileControl addSubview:tile];
+                [NSLayoutConstraint activateConstraints:@[
+                    [tile.leadingAnchor constraintEqualToAnchor:tileControl.leadingAnchor],
+                    [tile.trailingAnchor constraintEqualToAnchor:tileControl.trailingAnchor],
+                    [tile.topAnchor constraintEqualToAnchor:tileControl.topAnchor],
+                    [tile.bottomAnchor constraintEqualToAnchor:tileControl.bottomAnchor]
+                ]];
 
-            [tileControl addTarget:self
-                            action:@selector(handleCurrentlyReadingTileControlTap:)
-                  forControlEvents:UIControlEventTouchUpInside];
-            [tileControl addTarget:self
-                            action:@selector(_chipTouchDown:)
-                  forControlEvents:UIControlEventTouchDown | UIControlEventTouchDragEnter];
-            [tileControl addTarget:self
-                            action:@selector(_chipTouchUp:)
-                  forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchCancel |
-                                   UIControlEventTouchDragExit];
+                [tileControl addTarget:self
+                                action:@selector(handleCurrentlyReadingTileControlTap:)
+                      forControlEvents:UIControlEventTouchUpInside];
+                [tileControl addTarget:self
+                                action:@selector(_chipTouchDown:)
+                      forControlEvents:UIControlEventTouchDown | UIControlEventTouchDragEnter];
+                [tileControl addTarget:self
+                                action:@selector(_chipTouchUp:)
+                      forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchCancel |
+                                       UIControlEventTouchDragExit];
 
-            tileControl.tag = [self.currentlyReadingItems indexOfObject:item];
-            [self.currentlyReadingStack addArrangedSubview:tileControl];
+                tileControl.tag = [self.currentlyReadingItems indexOfObject:item];
+                [self.currentlyReadingStack addArrangedSubview:tileControl];
+            }
         }
 
         dispatch_async(dispatch_get_main_queue(), ^{
