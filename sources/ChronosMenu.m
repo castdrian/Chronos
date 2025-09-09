@@ -1287,17 +1287,22 @@ extern double          totalBookDuration;
                                 dispatch_async(dispatch_get_main_queue(), ^{
                                     if (error)
                                     {
+                                        [Logger error:LOG_CATEGORY_DEFAULT
+                                               format:@"Error fetching currently reading: %@",
+                                                      error.localizedDescription];
                                         return;
                                     }
 
-                                    if (![weakSelf isCurrentlyReadingEqual:previousItems to:items])
+                                    weakSelf.currentlyReadingItems = items;
+
+                                    if (items && items.count > 0)
                                     {
-                                        weakSelf.currentlyReadingItems = items;
                                         [weakSelf renderCurrentlyReading];
                                     }
-                                    else
+                                    else if (![weakSelf isCurrentlyReadingEqual:previousItems
+                                                                             to:items])
                                     {
-                                        weakSelf.currentlyReadingItems = items;
+                                        [weakSelf renderCurrentlyReading];
                                     }
 
                                     [weakSelf saveCachedHardcoverUser:user
@@ -2376,24 +2381,45 @@ extern double          totalBookDuration;
 
     HardcoverAPI *api = [HardcoverAPI sharedInstance];
 
-    if (!self.currentlyReadingItems || self.currentlyReadingItems.count == 0)
+    if (!api.isAuthorized || !api.currentUser || !api.currentUser.userId)
     {
-        if (api.currentUser && api.currentUser.userId)
-        {
-            [api fetchCurrentlyReadingForUserId:api.currentUser.userId
-                                     completion:^(NSArray *items, NSError *error) {
-                                         if (!error && items && items.count > 0)
-                                         {
-                                             self.currentlyReadingItems = items;
-                                             [self autoSwitchEditionForASIN:asin];
-                                         }
-                                     }];
-        }
+        [Logger info:LOG_CATEGORY_DEFAULT format:@"Auto-switch skipped: not authorized"];
         return;
     }
 
+    if (!self.currentlyReadingItems || self.currentlyReadingItems.count == 0)
+    {
+        [Logger info:LOG_CATEGORY_DEFAULT
+              format:@"Auto-switch: fetching currently reading items first"];
+        [api fetchCurrentlyReadingForUserId:api.currentUser.userId
+                                 completion:^(NSArray *items, NSError *error) {
+                                     if (!error && items && items.count > 0)
+                                     {
+                                         dispatch_async(dispatch_get_main_queue(), ^{
+                                             self.currentlyReadingItems = items;
+                                             [self performAutoSwitchForASIN:asin withItems:items];
+                                         });
+                                     }
+                                     else
+                                     {
+                                         [Logger info:LOG_CATEGORY_DEFAULT
+                                               format:@"No currently reading items found for "
+                                                      @"auto-switch"];
+                                     }
+                                 }];
+        return;
+    }
+
+    [self performAutoSwitchForASIN:asin withItems:self.currentlyReadingItems];
+}
+
+- (void)performAutoSwitchForASIN:(NSString *)asin withItems:(NSArray *)items
+{
+    if (!asin || !items || items.count == 0)
+        return;
+
     NSDictionary *matchingItem = nil;
-    for (NSDictionary *item in self.currentlyReadingItems)
+    for (NSDictionary *item in items)
     {
         NSArray *asins = ([item[@"asins"] isKindOfClass:[NSArray class]] ? item[@"asins"] : @[]);
         for (NSString *bookASIN in asins)
@@ -2422,6 +2448,7 @@ extern double          totalBookDuration;
         return;
     }
 
+    HardcoverAPI *api = [HardcoverAPI sharedInstance];
     [api findEditionByASIN:asin
                 completion:^(NSNumber *existingEditionId, NSError *error) {
                     if (error || !existingEditionId)
@@ -2456,8 +2483,10 @@ extern double          totalBookDuration;
                         [Logger notice:LOG_CATEGORY_DEFAULT
                                 format:@"Auto-switching to edition %@ for ASIN %@",
                                        existingEditionId, asin];
-                        [self switchToEditionAndCreateRead:existingEditionId
-                                               forUserBook:userBookId];
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            [self switchToEditionAndCreateRead:existingEditionId
+                                                   forUserBook:userBookId];
+                        });
                     }
                     else
                     {
@@ -2493,6 +2522,8 @@ extern double          totalBookDuration;
                                      {
                                          dispatch_async(dispatch_get_main_queue(), ^{
                                              self.currentlyReadingItems = items;
+                                             [self renderCurrentlyReading];
+
                                              HardcoverAPI *api = [HardcoverAPI sharedInstance];
                                              if (api.currentUser)
                                              {
