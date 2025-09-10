@@ -1,4 +1,5 @@
 #import "ChronosMenu.h"
+#import "Logger.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -1294,6 +1295,9 @@ extern double          totalBookDuration;
                                     }
 
                                     weakSelf.currentlyReadingItems = items;
+                                    [Logger info:LOG_CATEGORY_DEFAULT
+                                          format:@"Loaded currently reading items: %lu",
+                                                 (unsigned long) items.count];
 
                                     if (items && items.count > 0)
                                     {
@@ -1370,6 +1374,9 @@ extern double          totalBookDuration;
 
 - (void)addCurrentlyReadingContent
 {
+    [Logger info:LOG_CATEGORY_DEFAULT
+          format:@"Adding currently reading content - items count: %lu",
+                 (unsigned long) self.currentlyReadingItems.count];
     extern NSString *currentASIN;
     const CGFloat    kPillWidth = 96.0;
 
@@ -1555,6 +1562,8 @@ extern double          totalBookDuration;
             }
             else
             {
+                [Logger info:LOG_CATEGORY_DEFAULT
+                      format:@"Creating tappable tile control for item: %@", title];
                 UIControl *tileControl                                = [[UIControl alloc] init];
                 tileControl.translatesAutoresizingMaskIntoConstraints = NO;
                 tileControl.layer.cornerRadius                        = tile.layer.cornerRadius;
@@ -1978,14 +1987,23 @@ extern double          totalBookDuration;
 
 - (void)handleCurrentlyReadingTileControlTap:(UIControl *)sender
 {
+    [Logger info:LOG_CATEGORY_DEFAULT format:@"Tile tapped - tag: %ld", (long) sender.tag];
     NSInteger itemIndex = sender.tag;
     if (itemIndex < 0 || itemIndex >= self.currentlyReadingItems.count)
+    {
+        [Logger info:LOG_CATEGORY_DEFAULT format:@"Invalid item index: %ld", (long) itemIndex];
         return;
-    NSDictionary    *selectedItem = self.currentlyReadingItems[itemIndex];
-    NSString        *bookTitle    = selectedItem[@"title"] ?: @"Unknown Book";
+    }
+    NSDictionary *selectedItem = self.currentlyReadingItems[itemIndex];
+    NSString     *bookTitle    = selectedItem[@"title"] ?: @"Unknown Book";
+    [Logger info:LOG_CATEGORY_DEFAULT format:@"Selected book: %@", bookTitle];
     extern NSString *currentASIN;
     if (!currentASIN || currentASIN.length == 0)
+    {
+        [Logger info:LOG_CATEGORY_DEFAULT format:@"No current ASIN available"];
         return;
+    }
+    [Logger info:LOG_CATEGORY_DEFAULT format:@"Current ASIN: %@", currentASIN];
 
     BOOL anyTracked = NO;
     for (NSDictionary *item in self.currentlyReadingItems)
@@ -2006,10 +2024,14 @@ extern double          totalBookDuration;
             break;
     }
 
+    [Logger info:LOG_CATEGORY_DEFAULT format:@"anyTracked: %@", anyTracked ? @"YES" : @"NO"];
+
     if (anyTracked)
     {
+        [Logger info:LOG_CATEGORY_DEFAULT format:@"Book already tracked, returning"];
         return;
     }
+    [Logger info:LOG_CATEGORY_DEFAULT format:@"Showing confirmation alert"];
     NSString *alertMessage =
         [NSString stringWithFormat:@"Create and track a new edition for '%@'?", bookTitle];
     UIAlertController *confirmAlert =
@@ -2023,6 +2045,8 @@ extern double          totalBookDuration;
         addAction:[UIAlertAction actionWithTitle:@"Create Edition"
                                            style:UIAlertActionStyleDefault
                                          handler:^(UIAlertAction *action) {
+                                             [Logger info:LOG_CATEGORY_DEFAULT
+                                                   format:@"Alert action: Create Edition tapped"];
                                              [self createEditionAndSwitchForItem:selectedItem];
                                          }]];
     [self presentViewController:confirmAlert animated:YES completion:nil];
@@ -2085,7 +2109,9 @@ extern double          totalBookDuration;
 {
     extern NSString *currentASIN;
     if (!currentASIN || currentASIN.length == 0)
+    {
         return;
+    }
 
     NSNumber *bookId         = item[@"bookId"];
     NSNumber *userBookId     = item[@"user_book_id"];
@@ -2098,6 +2124,13 @@ extern double          totalBookDuration;
         return;
     }
 
+    NSInteger totalDuration = [AudibleMetadataCapture getTotalDurationForASIN:currentASIN];
+    if (totalDuration <= 0)
+    {
+        [self showErrorAlert:@"Could not determine audio duration for the current book."];
+        return;
+    }
+
     UIAlertController *progressAlert =
         [UIAlertController alertControllerWithTitle:@"Creating Edition"
                                             message:@"Please wait..."
@@ -2107,142 +2140,94 @@ extern double          totalBookDuration;
     HardcoverAPI *api = [HardcoverAPI sharedInstance];
 
     [api
-        findEditionByASIN:currentASIN
-               completion:^(NSNumber *existingEditionId, NSError *error) {
-                   dispatch_async(dispatch_get_main_queue(), ^{
-                       if (error)
-                       {
-                           [progressAlert
-                               dismissViewControllerAnimated:YES
-                                                  completion:^{
-                                                      [self
-                                                          showErrorAlert:
-                                                              [NSString
-                                                                  stringWithFormat:
-                                                                      @"Error checking for "
-                                                                      @"existing edition: %@",
-                                                                      error.localizedDescription]];
-                                                  }];
-                           return;
-                       }
+        createEditionForBook:bookId
+                       title:bookTitle
+              contributorIds:contributorIds
+                        asin:currentASIN
+                audioSeconds:totalDuration
+                  completion:^(NSNumber *editionId, NSError *error) {
+                      dispatch_async(dispatch_get_main_queue(), ^{
+                          if (error)
+                          {
+                              [progressAlert
+                                  dismissViewControllerAnimated:YES
+                                                     completion:^{
+                                                         [self
+                                                             showErrorAlert:
+                                                                 [NSString
+                                                                     stringWithFormat:
+                                                                         @"Failed to create "
+                                                                         @"edition: %@",
+                                                                         error
+                                                                             .localizedDescription]];
+                                                     }];
+                              return;
+                          }
 
-                       if (existingEditionId)
-                       {
-                           [self switchToEditionWithAlert:progressAlert
-                                                editionId:existingEditionId
-                                              forUserBook:userBookId];
-                       }
-                       else
-                       {
-                           NSInteger totalDuration =
-                               [AudibleMetadataCapture getTotalDurationForASIN:currentASIN];
-                           if (totalDuration <= 0)
-                           {
-                               [progressAlert
-                                   dismissViewControllerAnimated:YES
-                                                      completion:^{
-                                                          [self
-                                                              showErrorAlert:@"Could not determine "
-                                                                             @"audio duration for "
-                                                                             @"the current book."];
-                                                      }];
-                               return;
-                           }
+                          if (!editionId)
+                          {
+                              [progressAlert
+                                  dismissViewControllerAnimated:YES
+                                                     completion:^{
+                                                         [self showErrorAlert:
+                                                                   @"Failed to create edition: No "
+                                                                   @"edition ID returned."];
+                                                     }];
+                              return;
+                          }
 
-                           [api
-                               createEditionForBook:bookId
-                                              title:bookTitle
-                                     contributorIds:contributorIds
-                                               asin:currentASIN
-                                       audioSeconds:totalDuration
-                                         completion:^(NSNumber *editionId, NSError *error) {
-                                             dispatch_async(dispatch_get_main_queue(), ^{
-                                                 if (error)
-                                                 {
-                                                     [progressAlert
-                                                         dismissViewControllerAnimated:YES
-                                                                            completion:^{
-                                                                                [self
-                                                                                    showErrorAlert:
-                                                                                        [NSString
-                                                                                            stringWithFormat:
-                                                                                                @"F"
-                                                                                                @"a"
-                                                                                                @"i"
-                                                                                                @"l"
-                                                                                                @"e"
-                                                                                                @"d"
-                                                                                                @" "
-                                                                                                @"t"
-                                                                                                @"o"
-                                                                                                @" "
-                                                                                                @"c"
-                                                                                                @"r"
-                                                                                                @"e"
-                                                                                                @"a"
-                                                                                                @"t"
-                                                                                                @"e"
-                                                                                                @" "
-                                                                                                @"e"
-                                                                                                @"d"
-                                                                                                @"i"
-                                                                                                @"t"
-                                                                                                @"i"
-                                                                                                @"o"
-                                                                                                @"n"
-                                                                                                @":"
-                                                                                                @" "
-                                                                                                @"%"
-                                                                                                @"@",
-                                                                                                error
-                                                                                                    .localizedDescription]];
-                                                                            }];
-                                                     return;
-                                                 }
-
-                                                 if (!editionId)
-                                                 {
-                                                     [progressAlert
-                                                         dismissViewControllerAnimated:YES
-                                                                            completion:^{
-                                                                                [self
-                                                                                    showErrorAlert:
-                                                                                        @"Failed "
-                                                                                        @"to "
-                                                                                        @"create "
-                                                                                        @"edition: "
-                                                                                        @"No "
-                                                                                        @"edition "
-                                                                                        @"ID "
-                                                                                        @"returned"
-                                                                                        @"."];
-                                                                            }];
-                                                     return;
-                                                 }
-
-                                                 [self switchToEditionWithAlert:progressAlert
-                                                                      editionId:editionId
-                                                                    forUserBook:userBookId];
-                                             });
-                                         }];
-                       }
-                   });
-               }];
+                          [progressAlert
+                              dismissViewControllerAnimated:YES
+                                                 completion:^{
+                                                     [self
+                                                         switchToEditionAndCreateRead:editionId
+                                                                          forUserBook:userBookId
+                                                                           completion:^(
+                                                                               BOOL     success,
+                                                                               NSError *error) {
+                                                                               if (error ||
+                                                                                   !success)
+                                                                               {
+                                                                                   dispatch_async(
+                                                                                       dispatch_get_main_queue(),
+                                                                                       ^{
+                                                                                           [self
+                                                                                               showErrorAlert:
+                                                                                                   [NSString
+                                                                                                       stringWithFormat:
+                                                                                                           @"Failed to switch edition: %@",
+                                                                                                           error.localizedDescription
+                                                                                                               ?: @"Unknown error"]];
+                                                                                       });
+                                                                               }
+                                                                           }];
+                                                 }];
+                      });
+                  }];
 }
 
 - (void)switchToEditionWithAlert:(UIAlertController *)progressAlert
                        editionId:(NSNumber *)editionId
                      forUserBook:(NSNumber *)userBookId
 {
+    [Logger info:LOG_CATEGORY_DEFAULT
+          format:@"switchToEditionWithAlert called - editionId: %@, userBookId: %@", editionId,
+                 userBookId];
     HardcoverAPI *api = [HardcoverAPI sharedInstance];
 
     [api
         switchUserBookToEdition:userBookId
                       editionId:editionId
                      completion:^(BOOL success, NSError *error) {
+                         [Logger
+                               info:LOG_CATEGORY_DEFAULT
+                             format:@"switchUserBookToEdition completion - success: %@, error: %@",
+                                    success ? @"YES" : @"NO", error];
                          dispatch_async(dispatch_get_main_queue(), ^{
                              if (error || !success)
                              {
+                                 [Logger info:LOG_CATEGORY_DEFAULT
+                                       format:@"Switch failed, showing error"];
                                  [progressAlert
                                      dismissViewControllerAnimated:YES
                                                         completion:^{
@@ -2259,11 +2244,16 @@ extern double          totalBookDuration;
                                  return;
                              }
 
+                             [Logger info:LOG_CATEGORY_DEFAULT
+                                   format:@"Switch succeeded, showing success alert"];
                              extern NSString *currentASIN;
 
                              [progressAlert
                                  dismissViewControllerAnimated:YES
                                                     completion:^{
+                                                        [Logger info:LOG_CATEGORY_DEFAULT
+                                                              format:@"Progress alert dismissed, "
+                                                                     @"presenting success alert"];
                                                         UIAlertController *alert = [UIAlertController
                                                             alertControllerWithTitle:@"Success"
                                                                              message:
@@ -2283,6 +2273,9 @@ extern double          totalBookDuration;
                                                         [self presentViewController:alert
                                                                            animated:YES
                                                                          completion:nil];
+                                                        [Logger info:LOG_CATEGORY_DEFAULT
+                                                              format:@"Success alert presented, "
+                                                                     @"refreshing data"];
                                                         [self refreshCurrentlyReadingData];
                                                     }];
                          });
@@ -2361,6 +2354,13 @@ extern double          totalBookDuration;
 
 - (void)switchToEditionAndCreateRead:(NSNumber *)editionId forUserBook:(NSNumber *)userBookId
 {
+    [self switchToEditionAndCreateRead:editionId forUserBook:userBookId completion:nil];
+}
+
+- (void)switchToEditionAndCreateRead:(NSNumber *)editionId
+                         forUserBook:(NSNumber *)userBookId
+                          completion:(void (^)(BOOL success, NSError *error))completion
+{
     HardcoverAPI *api = [HardcoverAPI sharedInstance];
 
     [api switchUserBookToEdition:userBookId
@@ -2371,6 +2371,8 @@ extern double          totalBookDuration;
                               [Logger error:LOG_CATEGORY_DEFAULT
                                      format:@"Edition switch failed: %@",
                                             error.localizedDescription ?: @"Unknown error"];
+                              if (completion)
+                                  completion(NO, error);
                               return;
                           }
 
@@ -2386,8 +2388,11 @@ extern double          totalBookDuration;
                                   progressSeconds:currentProgress
                                         editionId:editionId
                                        completion:^(NSDictionary *readData, NSError *readError) {
-                                           dispatch_async(dispatch_get_main_queue(),
-                                                          ^{ [self refreshCurrentlyReadingData]; });
+                                           dispatch_async(dispatch_get_main_queue(), ^{
+                                               [self refreshCurrentlyReadingData];
+                                               if (completion)
+                                                   completion(YES, nil);
+                                           });
                                        }];
                       }];
 }
