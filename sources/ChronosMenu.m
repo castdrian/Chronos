@@ -36,6 +36,7 @@ extern double          totalBookDuration;
 @property (nonatomic, strong) UIScrollView            *currentlyReadingScroll;
 @property (nonatomic, strong) UIStackView             *currentlyReadingStack;
 @property (nonatomic, strong) NSArray                 *currentlyReadingItems;
+@property (nonatomic, strong) NSArray                 *previouslyDisplayedItems;
 @property (nonatomic, strong) UIView                  *authorChip;
 @property (nonatomic, strong) UIView                  *progressChip;
 @property (nonatomic, strong) UIStackView             *detailsRow;
@@ -1295,9 +1296,6 @@ extern double          totalBookDuration;
                                     }
 
                                     weakSelf.currentlyReadingItems = items;
-                                    [Logger info:LOG_CATEGORY_DEFAULT
-                                          format:@"Loaded currently reading items: %lu",
-                                                 (unsigned long) items.count];
 
                                     if (items && items.count > 0)
                                     {
@@ -1324,23 +1322,48 @@ extern double          totalBookDuration;
     {
         if (wasVisible)
         {
-            [UIView transitionWithView:self.currentlyReadingStack
-                duration:0.25
-                options:UIViewAnimationOptionTransitionCrossDissolve
-                animations:^{
+            // Check if content has actually changed
+            BOOL contentChanged = ![self isCurrentlyReadingEqual:self.previouslyDisplayedItems
+                                                              to:self.currentlyReadingItems];
+
+            if (!contentChanged)
+            {
+                // No change, just update the sheet presentation
+                [self configureSheetPresentation];
+                return;
+            }
+
+            // Content changed, animate the transition
+            [UIView animateWithDuration:0.2
+                animations:^{ self.currentlyReadingStack.alpha = 0.0; }
+                completion:^(BOOL finished) {
+                    // Remove old content
                     for (UIView *v in self.currentlyReadingStack.arrangedSubviews)
                     {
                         [self.currentlyReadingStack removeArrangedSubview:v];
                         [v removeFromSuperview];
                     }
 
+                    // Add new content
                     [self addCurrentlyReadingContent];
-                }
-                completion:^(BOOL finished) { [self configureSheetPresentation]; }];
+
+                    // Store current items as previously displayed
+                    self.previouslyDisplayedItems =
+                        self.currentlyReadingItems ? [self.currentlyReadingItems copy] : nil;
+
+                    // Fade back in smoothly
+                    [UIView animateWithDuration:0.25
+                        animations:^{ self.currentlyReadingStack.alpha = 1.0; }
+                        completion:^(BOOL finished) { [self configureSheetPresentation]; }];
+                }];
         }
         else
         {
             [self addCurrentlyReadingContent];
+
+            // Store current items as previously displayed
+            self.previouslyDisplayedItems =
+                self.currentlyReadingItems ? [self.currentlyReadingItems copy] : nil;
 
             self.currentlyReadingContainer.hidden = NO;
             self.currentlyReadingContainer.alpha  = 0.0;
@@ -1369,14 +1392,14 @@ extern double          totalBookDuration;
             self.currentlyReadingContainer.hidden = YES;
             [self adjustHardcoverSectionBottomTo:self.userProfileView];
         }
+
+        // Clear previously displayed items when hiding
+        self.previouslyDisplayedItems = nil;
     }
 }
 
 - (void)addCurrentlyReadingContent
 {
-    [Logger info:LOG_CATEGORY_DEFAULT
-          format:@"Adding currently reading content - items count: %lu",
-                 (unsigned long) self.currentlyReadingItems.count];
     extern NSString *currentASIN;
     const CGFloat    kPillWidth = 96.0;
 
@@ -1562,8 +1585,6 @@ extern double          totalBookDuration;
             }
             else
             {
-                [Logger info:LOG_CATEGORY_DEFAULT
-                      format:@"Creating tappable tile control for item: %@", title];
                 UIControl *tileControl                                = [[UIControl alloc] init];
                 tileControl.translatesAutoresizingMaskIntoConstraints = NO;
                 tileControl.layer.cornerRadius                        = tile.layer.cornerRadius;
@@ -1987,23 +2008,18 @@ extern double          totalBookDuration;
 
 - (void)handleCurrentlyReadingTileControlTap:(UIControl *)sender
 {
-    [Logger info:LOG_CATEGORY_DEFAULT format:@"Tile tapped - tag: %ld", (long) sender.tag];
     NSInteger itemIndex = sender.tag;
     if (itemIndex < 0 || itemIndex >= self.currentlyReadingItems.count)
     {
-        [Logger info:LOG_CATEGORY_DEFAULT format:@"Invalid item index: %ld", (long) itemIndex];
         return;
     }
-    NSDictionary *selectedItem = self.currentlyReadingItems[itemIndex];
-    NSString     *bookTitle    = selectedItem[@"title"] ?: @"Unknown Book";
-    [Logger info:LOG_CATEGORY_DEFAULT format:@"Selected book: %@", bookTitle];
+    NSDictionary    *selectedItem = self.currentlyReadingItems[itemIndex];
+    NSString        *bookTitle    = selectedItem[@"title"] ?: @"Unknown Book";
     extern NSString *currentASIN;
     if (!currentASIN || currentASIN.length == 0)
     {
-        [Logger info:LOG_CATEGORY_DEFAULT format:@"No current ASIN available"];
         return;
     }
-    [Logger info:LOG_CATEGORY_DEFAULT format:@"Current ASIN: %@", currentASIN];
 
     BOOL anyTracked = NO;
     for (NSDictionary *item in self.currentlyReadingItems)
@@ -2024,14 +2040,10 @@ extern double          totalBookDuration;
             break;
     }
 
-    [Logger info:LOG_CATEGORY_DEFAULT format:@"anyTracked: %@", anyTracked ? @"YES" : @"NO"];
-
     if (anyTracked)
     {
-        [Logger info:LOG_CATEGORY_DEFAULT format:@"Book already tracked, returning"];
         return;
     }
-    [Logger info:LOG_CATEGORY_DEFAULT format:@"Showing confirmation alert"];
     NSString *alertMessage =
         [NSString stringWithFormat:@"Create and track a new edition for '%@'?", bookTitle];
     UIAlertController *confirmAlert =
@@ -2045,8 +2057,6 @@ extern double          totalBookDuration;
         addAction:[UIAlertAction actionWithTitle:@"Create Edition"
                                            style:UIAlertActionStyleDefault
                                          handler:^(UIAlertAction *action) {
-                                             [Logger info:LOG_CATEGORY_DEFAULT
-                                                   format:@"Alert action: Create Edition tapped"];
                                              [self createEditionAndSwitchForItem:selectedItem];
                                          }]];
     [self presentViewController:confirmAlert animated:YES completion:nil];
@@ -2210,9 +2220,6 @@ extern double          totalBookDuration;
                        editionId:(NSNumber *)editionId
                      forUserBook:(NSNumber *)userBookId
 {
-    [Logger info:LOG_CATEGORY_DEFAULT
-          format:@"switchToEditionWithAlert called - editionId: %@, userBookId: %@", editionId,
-                 userBookId];
     HardcoverAPI *api = [HardcoverAPI sharedInstance];
 
     [api
@@ -2226,8 +2233,6 @@ extern double          totalBookDuration;
                          dispatch_async(dispatch_get_main_queue(), ^{
                              if (error || !success)
                              {
-                                 [Logger info:LOG_CATEGORY_DEFAULT
-                                       format:@"Switch failed, showing error"];
                                  [progressAlert
                                      dismissViewControllerAnimated:YES
                                                         completion:^{
@@ -2244,16 +2249,11 @@ extern double          totalBookDuration;
                                  return;
                              }
 
-                             [Logger info:LOG_CATEGORY_DEFAULT
-                                   format:@"Switch succeeded, showing success alert"];
                              extern NSString *currentASIN;
 
                              [progressAlert
                                  dismissViewControllerAnimated:YES
                                                     completion:^{
-                                                        [Logger info:LOG_CATEGORY_DEFAULT
-                                                              format:@"Progress alert dismissed, "
-                                                                     @"presenting success alert"];
                                                         UIAlertController *alert = [UIAlertController
                                                             alertControllerWithTitle:@"Success"
                                                                              message:
@@ -2273,9 +2273,6 @@ extern double          totalBookDuration;
                                                         [self presentViewController:alert
                                                                            animated:YES
                                                                          completion:nil];
-                                                        [Logger info:LOG_CATEGORY_DEFAULT
-                                                              format:@"Success alert presented, "
-                                                                     @"refreshing data"];
                                                         [self refreshCurrentlyReadingData];
                                                     }];
                          });
