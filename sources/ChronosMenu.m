@@ -814,10 +814,12 @@ extern double          totalBookDuration;
                                                            constant:-12]
     ]];
 
-    UITapGestureRecognizer *tapGesture =
-        [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(editHardcoverToken)];
-    profileView.userInteractionEnabled = YES;
-    [profileView addGestureRecognizer:tapGesture];
+    UILongPressGestureRecognizer *longPressGesture =
+        [[UILongPressGestureRecognizer alloc] initWithTarget:self
+                                                      action:@selector(editHardcoverToken:)];
+    longPressGesture.minimumPressDuration = 0.5;
+    profileView.userInteractionEnabled    = YES;
+    [profileView addGestureRecognizer:longPressGesture];
 
     return profileView;
 }
@@ -1673,8 +1675,16 @@ extern double          totalBookDuration;
         setActive:YES];
 }
 
-- (void)editHardcoverToken
+- (void)editHardcoverToken:(UILongPressGestureRecognizer *)gesture
 {
+    if (gesture.state != UIGestureRecognizerStateBegan)
+        return;
+
+    UIImpactFeedbackGenerator *gen =
+        [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
+    [gen prepare];
+    [gen impactOccurred];
+
     UIAlertController *alert = [UIAlertController
         alertControllerWithTitle:@"Edit API Token"
                          message:@"Do you want to change your Hardcover API token?"
