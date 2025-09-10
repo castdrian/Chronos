@@ -51,7 +51,7 @@
                           variables:(NSDictionary *)variables
                          completion:(void (^)(NSDictionary *response, NSError *error))completion
 {
-    NSURL *url = [NSURL URLWithString:@"https://api-staging.hardcover.app/v1/graphql"];
+    NSURL *url = [NSURL URLWithString:@"https://api.hardcover.app/v1/graphql"];
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     [request setHTTPMethod:@"POST"];
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
