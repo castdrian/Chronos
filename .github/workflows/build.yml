@@ -310,7 +310,7 @@ jobs:
     needs: [precheck, build-tweak, release-app]
     steps:
       - name: Update Repository
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.REPO_ACCESS_TOKEN }}
           script: |
