@@ -137,7 +137,7 @@ jobs:
 
       - name: Upload rootless package
         id: upload-deb
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: rootless package
           path: packages/*.deb
@@ -194,7 +194,7 @@ jobs:
 
       - name: Upload ipa as artifact
         id: upload-ipa
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ipa
           path: ${{ env.APP_NAME }}.ipa
