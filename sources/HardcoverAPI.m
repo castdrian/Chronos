@@ -534,7 +534,6 @@ static NSString *const kHardcoverGraphQLEndpoint = @"https://api.hardcover.app/v
 
                       if (!readData)
                       {
-
                           [self
                               findUserBookAndEditionForASIN:asin
                                                  completion:^(NSDictionary *bookData,
@@ -554,44 +553,70 @@ static NSString *const kHardcoverGraphQLEndpoint = @"https://api.hardcover.app/v
                                                          return;
                                                      }
 
-                                                     NSNumber *userBookId = bookData[@"userBookId"];
-                                                     NSNumber *editionId  = bookData[@"editionId"];
+                                                     NSNumber *hasExistingRead =
+                                                         bookData[@"hasExistingRead"];
+                                                     if ([hasExistingRead boolValue])
+                                                     {
+                                                         NSNumber *readId = bookData[@"readId"];
+                                                         NSNumber *editionId =
+                                                             bookData[@"editionId"];
 
-                                                     [self
-                                                         insertUserBookRead:userBookId
-                                                            progressSeconds:seconds
-                                                                  editionId:editionId
-                                                                 completion:^(
-                                                                     NSDictionary *newReadData,
-                                                                     NSError      *insertError) {
-                                                                     if (insertError ||
-                                                                         !newReadData)
-                                                                     {
+                                                         [self
+                                                             updateExistingReadProgress:readId
+                                                                        progressSeconds:seconds
+                                                                              editionId:editionId
+                                                                              startedAt:nil
+                                                                             completion:completion];
+                                                     }
+                                                     else
+                                                     {
+                                                         NSNumber *userBookId =
+                                                             bookData[@"userBookId"];
+                                                         NSNumber *editionId =
+                                                             bookData[@"editionId"];
+
+                                                         [self
+                                                             insertUserBookRead:userBookId
+                                                                progressSeconds:seconds
+                                                                      editionId:editionId
+                                                                     completion:^(
+                                                                         NSDictionary *newReadData,
+                                                                         NSError *insertError) {
+                                                                         if (insertError ||
+                                                                             !newReadData)
+                                                                         {
+                                                                             if (completion)
+                                                                                 completion(
+                                                                                     NO,
+                                                                                     insertError);
+                                                                             return;
+                                                                         }
+
+                                                                         self.asinToIDs[asin] = @{
+                                                                             @"user_book_id" :
+                                                                                     newReadData
+                                                                                         [@"userBoo"
+                                                                                          @"k"
+                                                                                          @"Id"]
+                                                                                 ?: @0,
+                                                                             @"edition_id" :
+                                                                                     newReadData
+                                                                                         [@"edition"
+                                                                                          @"I"
+                                                                                          @"d"]
+                                                                                 ?: @0,
+                                                                             @"audio_seconds" :
+                                                                                     bookData
+                                                                                         [@"audioSe"
+                                                                                          @"c"
+                                                                                          @"onds"]
+                                                                                 ?: @0
+                                                                         };
+
                                                                          if (completion)
-                                                                             completion(
-                                                                                 NO, insertError);
-                                                                         return;
-                                                                     }
-
-                                                                     self.asinToIDs[asin] = @{
-                                                                         @"user_book_id" :
-                                                                                 newReadData
-                                                                                     [@"userBook"
-                                                                                      @"Id"]
-                                                                             ?: @0,
-                                                                         @"edition_id" : newReadData
-                                                                                 [@"editionI"
-                                                                                  @"d"]
-                                                                             ?: @0,
-                                                                         @"audio_seconds" : bookData
-                                                                                 [@"audioSec"
-                                                                                  @"onds"]
-                                                                             ?: @0
-                                                                     };
-
-                                                                     if (completion)
-                                                                         completion(YES, nil);
-                                                                 }];
+                                                                             completion(YES, nil);
+                                                                     }];
+                                                     }
                                                  }];
                           return;
                       }
@@ -682,36 +707,33 @@ static NSString *const kHardcoverGraphQLEndpoint = @"https://api.hardcover.app/v
                           if (![reads isKindOfClass:[NSArray class]] || reads.count == 0)
                               continue;
 
-                          for (NSInteger i = (NSInteger) reads.count - 1; i >= 0; i--)
+                          NSDictionary *lastRead = reads.lastObject;
+                          if (![lastRead isKindOfClass:[NSDictionary class]])
+                              continue;
+
+                          NSDictionary *edition = lastRead[@"edition"];
+                          if (![edition isKindOfClass:[NSDictionary class]])
+                              continue;
+
+                          NSString *editionASIN = edition[@"asin"];
+                          if (![editionASIN isKindOfClass:[NSString class]])
+                              continue;
+
+                          if ([editionASIN isEqualToString:asin])
                           {
-                              NSDictionary *read = reads[i];
-                              if (![read isKindOfClass:[NSDictionary class]])
-                                  continue;
+                              NSDictionary *readData = @{
+                                  @"readId" : lastRead[@"id"] ?: @0,
+                                  @"userBookId" : userBook[@"id"] ?: @0,
+                                  @"editionId" : edition[@"id"] ?: @0,
+                                  @"audioSeconds" : edition[@"audio_seconds"] ?: @0,
+                                  @"progressSeconds" : lastRead[@"progress_seconds"] ?: @0,
+                                  @"startedAt" : lastRead[@"started_at"] ?: [NSNull null],
+                                  @"finishedAt" : lastRead[@"finished_at"] ?: [NSNull null]
+                              };
 
-                              NSDictionary *edition = read[@"edition"];
-                              if (![edition isKindOfClass:[NSDictionary class]])
-                                  continue;
-
-                              NSString *editionASIN = edition[@"asin"];
-                              if (![editionASIN isKindOfClass:[NSString class]])
-                                  continue;
-
-                              if ([editionASIN isEqualToString:asin])
-                              {
-                                  NSDictionary *readData = @{
-                                      @"readId" : read[@"id"] ?: @0,
-                                      @"userBookId" : userBook[@"id"] ?: @0,
-                                      @"editionId" : edition[@"id"] ?: @0,
-                                      @"audioSeconds" : edition[@"audio_seconds"] ?: @0,
-                                      @"progressSeconds" : read[@"progress_seconds"] ?: @0,
-                                      @"startedAt" : read[@"started_at"] ?: [NSNull null],
-                                      @"finishedAt" : read[@"finished_at"] ?: [NSNull null]
-                                  };
-
-                                  if (completion)
-                                      completion(readData, nil);
-                                  return;
-                              }
+                              if (completion)
+                                  completion(readData, nil);
+                              return;
                           }
                       }
 
@@ -740,8 +762,16 @@ static NSString *const kHardcoverGraphQLEndpoint = @"https://api.hardcover.app/v
 {
     NSString *query = [NSString stringWithFormat:@"query FindBookByASIN { "
                                                  @"me { "
-                                                 @"user_books { "
+                                                 @"user_books(where: {status_id: {_eq: 2}}) { "
                                                  @"id "
+                                                 @"user_book_reads { "
+                                                 @"id "
+                                                 @"edition { "
+                                                 @"id "
+                                                 @"asin "
+                                                 @"audio_seconds "
+                                                 @"} "
+                                                 @"} "
                                                  @"book { "
                                                  @"editions(where: {asin: {_eq: \"%@\"}}) { "
                                                  @"id "
@@ -814,6 +844,34 @@ static NSString *const kHardcoverGraphQLEndpoint = @"https://api.hardcover.app/v
                         if (![userBook isKindOfClass:[NSDictionary class]])
                             continue;
 
+                        NSArray *reads = userBook[@"user_book_reads"];
+                        if ([reads isKindOfClass:[NSArray class]] && reads.count > 0)
+                        {
+                            NSDictionary *lastRead = reads.lastObject;
+                            if ([lastRead isKindOfClass:[NSDictionary class]])
+                            {
+                                NSDictionary *readEdition = lastRead[@"edition"];
+                                if ([readEdition isKindOfClass:[NSDictionary class]])
+                                {
+                                    NSString *readAsin = readEdition[@"asin"];
+                                    if ([readAsin isEqualToString:asin])
+                                    {
+                                        NSDictionary *bookData = @{
+                                            @"hasExistingRead" : @YES,
+                                            @"readId" : lastRead[@"id"],
+                                            @"userBookId" : userBook[@"id"],
+                                            @"editionId" : readEdition[@"id"],
+                                            @"audioSeconds" : readEdition[@"audio_seconds"] ?: @0
+                                        };
+
+                                        if (completion)
+                                            completion(bookData, nil);
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+
                         NSDictionary *book = userBook[@"book"];
                         if (![book isKindOfClass:[NSDictionary class]])
                             continue;
@@ -830,8 +888,8 @@ static NSString *const kHardcoverGraphQLEndpoint = @"https://api.hardcover.app/v
                             NSString *editionAsin = edition[@"asin"];
                             if ([editionAsin isEqualToString:asin])
                             {
-
                                 NSDictionary *bookData = @{
+                                    @"hasExistingRead" : @NO,
                                     @"userBookId" : userBook[@"id"],
                                     @"editionId" : edition[@"id"],
                                     @"audioSeconds" : edition[@"audio_seconds"] ?: @0
@@ -1660,35 +1718,80 @@ static NSString *const kHardcoverGraphQLEndpoint = @"https://api.hardcover.app/v
                        forUserBook:(NSNumber *)userBookId
                           withASIN:(NSString *)asin
 {
-    [self switchUserBookToEdition:userBookId
-                        editionId:editionId
-                       completion:^(BOOL success, NSError *error) {
-                           if (error || !success)
-                           {
-                               [Logger error:LOG_CATEGORY_DEFAULT
-                                      format:@"Edition switch failed: %@",
-                                             error.localizedDescription ?: @"Unknown error"];
-                               return;
-                           }
+    [self
+        switchUserBookToEdition:userBookId
+                      editionId:editionId
+                     completion:^(BOOL success, NSError *error) {
+                         if (error || !success)
+                         {
+                             [Logger error:LOG_CATEGORY_DEFAULT
+                                    format:@"Edition switch failed: %@",
+                                           error.localizedDescription ?: @"Unknown error"];
+                             return;
+                         }
 
-                           NSInteger currentProgress = 0;
-                           if (asin && asin.length > 0)
-                           {
-                               currentProgress =
-                                   [AudibleMetadataCapture getCurrentProgressForASIN:asin];
-                           }
+                         NSInteger currentProgress = 0;
+                         if (asin && asin.length > 0)
+                         {
+                             currentProgress =
+                                 [AudibleMetadataCapture getCurrentProgressForASIN:asin];
+                         }
 
-                           [self insertUserBookRead:userBookId
-                                    progressSeconds:currentProgress
-                                          editionId:editionId
-                                         completion:^(NSDictionary *readData, NSError *readError) {
-                                             dispatch_async(dispatch_get_main_queue(), ^{
-                                                 [[NSNotificationCenter defaultCenter]
-                                                     postNotificationName:@"AutoSwitchCompleted"
-                                                                   object:nil];
-                                             });
-                                         }];
-                       }];
+                         [self
+                             getLatestReadForASIN:asin
+                                       completion:^(NSDictionary *readData, NSError *readError) {
+                                           if (readData)
+                                           {
+                                               NSNumber *readId       = readData[@"readId"];
+                                               NSString *startedAt    = nil;
+                                               id        startedAtVal = readData[@"startedAt"];
+                                               if ([startedAtVal isKindOfClass:[NSString class]])
+                                               {
+                                                   startedAt = startedAtVal;
+                                               }
+
+                                               [self
+                                                   updateExistingReadProgress:readId
+                                                              progressSeconds:currentProgress
+                                                                    editionId:editionId
+                                                                    startedAt:startedAt
+                                                                   completion:^(
+                                                                       BOOL     updateSuccess,
+                                                                       NSError *updateError) {
+                                                                       dispatch_async(
+                                                                           dispatch_get_main_queue(),
+                                                                           ^{
+                                                                               [[NSNotificationCenter
+                                                                                   defaultCenter]
+                                                                                   postNotificationName:
+                                                                                       @"AutoSwitch"
+                                                                                       @"Completed"
+                                                                                                 object:
+                                                                                                     nil];
+                                                                           });
+                                                                   }];
+                                           }
+                                           else
+                                           {
+                                               [self insertUserBookRead:userBookId
+                                                        progressSeconds:currentProgress
+                                                              editionId:editionId
+                                                             completion:^(NSDictionary *newReadData,
+                                                                          NSError *insertError) {
+                                                                 dispatch_async(
+                                                                     dispatch_get_main_queue(), ^{
+                                                                         [[NSNotificationCenter
+                                                                             defaultCenter]
+                                                                             postNotificationName:
+                                                                                 @"AutoSwitchComple"
+                                                                                 @"ted"
+                                                                                           object:
+                                                                                               nil];
+                                                                     });
+                                                             }];
+                                           }
+                                       }];
+                     }];
 }
 
 @end
