@@ -19,6 +19,13 @@
       "category": "entertainment",
       "versions": [
         {
+          "version": "4.56",
+          "date": "2025-11-01",
+          "size": 51581214,
+          "downloadURL": "https://github.com/castdrian/Chronos/releases/download/v4.56/Chronos.ipa",
+          "localizedDescription": "Further improvements to overall system stability and other minor adjustments have been made to enhance the user experience."
+        },
+        {
           "version": "4.52",
           "date": "2025-09-06",
           "size": 51558767,
