@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 1.5.2 - 2025-11-01
+
+### Fixed
+
+- Fixed issue where creating a new edition would incorrectly set initial progress to 60 minutes instead of 0 seconds
+- Fixed duplicate read records being created on every app launch
+- Fixed duplicate read records being created when using "Create Edition & Track" feature
+- Fixed currently reading books not appearing in UI when they don't have any read records yet
+
+### Added
+
+- Added staging API banner for debug builds
+
+## 1.5.1 - 2025-09-21
+
+### Changed
+
+- Hardcover token management now uses long press gesture on user profile area
+
 ## 1.5.0 - 2025-09-10
 
 ### Added
