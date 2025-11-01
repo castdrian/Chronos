@@ -372,26 +372,47 @@ static NSString *const kHardcoverGraphQLEndpoint = @"https://api.hardcover.app/v
                         }
                     }
 
-                    NSArray *reads = ((NSDictionary *) ub)[@"user_book_reads"];
-                    if (![reads isKindOfClass:[NSArray class]])
+                    id        bookIdVal = book[@"id"];
+                    NSNumber *bookId = [bookIdVal isKindOfClass:[NSNumber class]] ? bookIdVal : nil;
+
+                    if (!bookId)
                         continue;
+
+                    id            imageVal = book[@"image"];
+                    NSDictionary *image =
+                        [imageVal isKindOfClass:[NSDictionary class]] ? imageVal : @{};
+                    id        titleVal = book[@"title"];
+                    NSString *title    = [titleVal isKindOfClass:[NSString class]] ? titleVal : @"";
+                    id        coverVal = image[@"url"];
+                    NSString *coverURL = [coverVal isKindOfClass:[NSString class]] ? coverVal : @"";
+
+                    NSMutableDictionary *entry = itemsByBookId[bookId];
+                    if (!entry)
+                    {
+                        entry            = [NSMutableDictionary dictionary];
+                        entry[@"bookId"] = bookId;
+                        if (title)
+                            entry[@"title"] = title;
+                        if (coverURL)
+                            entry[@"coverURL"] = coverURL;
+                        entry[@"asins"]          = [NSMutableSet set];
+                        entry[@"contributorIds"] = contributorIds;
+                        entry[@"user_book_id"]   = userBookId;
+                        itemsByBookId[bookId]    = entry;
+                        [ordered addObject:entry];
+                    }
+
+                    NSArray *reads = ((NSDictionary *) ub)[@"user_book_reads"];
+                    if (![reads isKindOfClass:[NSArray class]] || reads.count == 0)
+                    {
+                        continue;
+                    }
 
                     for (id readObj in reads)
                     {
                         if (![readObj isKindOfClass:[NSDictionary class]])
                             continue;
                         NSDictionary *read = (NSDictionary *) readObj;
-
-                        id            userBookVal = read[@"user_book"];
-                        NSDictionary *userBook =
-                            [userBookVal isKindOfClass:[NSDictionary class]] ? userBookVal : @{};
-                        id            bookVal = userBook[@"book"];
-                        NSDictionary *book =
-                            [bookVal isKindOfClass:[NSDictionary class]] ? bookVal : @{};
-
-                        id            imageVal = book[@"image"];
-                        NSDictionary *image =
-                            [imageVal isKindOfClass:[NSDictionary class]] ? imageVal : @{};
 
                         id            editionVal = read[@"edition"];
                         NSDictionary *edition =
@@ -403,37 +424,10 @@ static NSString *const kHardcoverGraphQLEndpoint = @"https://api.hardcover.app/v
                         id        audioVal = edition[@"audio_seconds"];
                         NSNumber *audioSeconds =
                             [audioVal isKindOfClass:[NSNumber class]] ? audioVal : @(0);
-                        id        bookIdVal = book[@"id"];
-                        NSNumber *bookId =
-                            [bookIdVal isKindOfClass:[NSNumber class]] ? bookIdVal : nil;
-                        id        titleVal = book[@"title"];
-                        NSString *title =
-                            [titleVal isKindOfClass:[NSString class]] ? titleVal : @"";
-                        id        coverVal = image[@"url"];
-                        NSString *coverURL =
-                            [coverVal isKindOfClass:[NSString class]] ? coverVal : @"";
                         id        asinVal = edition[@"asin"];
                         NSString *asin = [asinVal isKindOfClass:[NSString class]] ? asinVal : @"";
                         NSNumber *editionId =
                             [edition[@"id"] isKindOfClass:[NSNumber class]] ? edition[@"id"] : nil;
-
-                        if (!bookId)
-                            continue;
-
-                        NSMutableDictionary *entry = itemsByBookId[bookId];
-                        if (!entry)
-                        {
-                            entry            = [NSMutableDictionary dictionary];
-                            entry[@"bookId"] = bookId;
-                            if (title)
-                                entry[@"title"] = title;
-                            if (coverURL)
-                                entry[@"coverURL"] = coverURL;
-                            entry[@"asins"]          = [NSMutableSet set];
-                            entry[@"contributorIds"] = contributorIds;
-                            itemsByBookId[bookId]    = entry;
-                            [ordered addObject:entry];
-                        }
 
                         if (asin.length > 0)
                         {
@@ -441,8 +435,11 @@ static NSString *const kHardcoverGraphQLEndpoint = @"https://api.hardcover.app/v
                             [asins addObject:asin];
                             if (userBookId && editionId)
                             {
-                                self.asinToIDs[asin] =
-                                    @{@"user_book_id" : userBookId, @"edition_id" : editionId};
+                                self.asinToIDs[asin] = @{
+                                    @"user_book_id" : userBookId,
+                                    @"edition_id" : editionId,
+                                    @"audio_seconds" : audioSeconds ?: @0
+                                };
                             }
                         }
 
@@ -450,8 +447,6 @@ static NSString *const kHardcoverGraphQLEndpoint = @"https://api.hardcover.app/v
                             entry[@"audio_seconds"] = audioSeconds;
                         if (progressSeconds)
                             entry[@"progress_seconds"] = progressSeconds;
-                        if (userBookId)
-                            entry[@"user_book_id"] = userBookId;
                         if (editionId)
                             entry[@"edition_id"] = editionId;
                     }
