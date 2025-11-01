@@ -1344,36 +1344,29 @@ extern double          totalBookDuration;
     {
         if (wasVisible)
         {
-            // Check if content has actually changed
             BOOL contentChanged = ![self isCurrentlyReadingEqual:self.previouslyDisplayedItems
                                                               to:self.currentlyReadingItems];
 
             if (!contentChanged)
             {
-                // No change, just update the sheet presentation
                 [self configureSheetPresentation];
                 return;
             }
 
-            // Content changed, animate the transition
             [UIView animateWithDuration:0.2
                 animations:^{ self.currentlyReadingStack.alpha = 0.0; }
                 completion:^(BOOL finished) {
-                    // Remove old content
                     for (UIView *v in self.currentlyReadingStack.arrangedSubviews)
                     {
                         [self.currentlyReadingStack removeArrangedSubview:v];
                         [v removeFromSuperview];
                     }
 
-                    // Add new content
                     [self addCurrentlyReadingContent];
 
-                    // Store current items as previously displayed
                     self.previouslyDisplayedItems =
                         self.currentlyReadingItems ? [self.currentlyReadingItems copy] : nil;
 
-                    // Fade back in smoothly
                     [UIView animateWithDuration:0.25
                         animations:^{ self.currentlyReadingStack.alpha = 1.0; }
                         completion:^(BOOL finished) { [self configureSheetPresentation]; }];
@@ -1383,7 +1376,6 @@ extern double          totalBookDuration;
         {
             [self addCurrentlyReadingContent];
 
-            // Store current items as previously displayed
             self.previouslyDisplayedItems =
                 self.currentlyReadingItems ? [self.currentlyReadingItems copy] : nil;
 
@@ -1415,7 +1407,6 @@ extern double          totalBookDuration;
             [self adjustHardcoverSectionBottomTo:self.userProfileView];
         }
 
-        // Clear previously displayed items when hiding
         self.previouslyDisplayedItems = nil;
     }
 }
@@ -2390,38 +2381,79 @@ extern double          totalBookDuration;
 {
     HardcoverAPI *api = [HardcoverAPI sharedInstance];
 
-    [api switchUserBookToEdition:userBookId
-                       editionId:editionId
-                      completion:^(BOOL success, NSError *error) {
-                          if (error || !success)
-                          {
-                              [Logger error:LOG_CATEGORY_DEFAULT
-                                     format:@"Edition switch failed: %@",
-                                            error.localizedDescription ?: @"Unknown error"];
-                              if (completion)
-                                  completion(NO, error);
-                              return;
-                          }
+    [api
+        switchUserBookToEdition:userBookId
+                      editionId:editionId
+                     completion:^(BOOL success, NSError *error) {
+                         if (error || !success)
+                         {
+                             [Logger error:LOG_CATEGORY_DEFAULT
+                                    format:@"Edition switch failed: %@",
+                                           error.localizedDescription ?: @"Unknown error"];
+                             if (completion)
+                                 completion(NO, error);
+                             return;
+                         }
 
-                          extern NSString *currentASIN;
-                          NSInteger        currentProgress = 0;
-                          if (currentASIN && currentASIN.length > 0)
-                          {
-                              currentProgress =
-                                  [AudibleMetadataCapture getCurrentProgressForASIN:currentASIN];
-                          }
+                         extern NSString *currentASIN;
+                         NSInteger        currentProgress = 0;
+                         if (currentASIN && currentASIN.length > 0)
+                         {
+                             currentProgress =
+                                 [AudibleMetadataCapture getCurrentProgressForASIN:currentASIN];
+                         }
 
-                          [api insertUserBookRead:userBookId
-                                  progressSeconds:currentProgress
-                                        editionId:editionId
+                         [api
+                             getLatestReadForASIN:currentASIN
                                        completion:^(NSDictionary *readData, NSError *readError) {
-                                           dispatch_async(dispatch_get_main_queue(), ^{
-                                               [self refreshCurrentlyReadingData];
-                                               if (completion)
-                                                   completion(YES, nil);
-                                           });
+                                           if (readData)
+                                           {
+                                               NSNumber *readId       = readData[@"readId"];
+                                               NSString *startedAt    = nil;
+                                               id        startedAtVal = readData[@"startedAt"];
+                                               if ([startedAtVal isKindOfClass:[NSString class]])
+                                               {
+                                                   startedAt = startedAtVal;
+                                               }
+
+                                               [api
+                                                   updateExistingReadProgress:readId
+                                                              progressSeconds:currentProgress
+                                                                    editionId:editionId
+                                                                    startedAt:startedAt
+                                                                   completion:^(
+                                                                       BOOL     updateSuccess,
+                                                                       NSError *updateError) {
+                                                                       dispatch_async(
+                                                                           dispatch_get_main_queue(),
+                                                                           ^{
+                                                                               [self
+                                                                                   refreshCurrentlyReadingData];
+                                                                               if (completion)
+                                                                                   completion(YES,
+                                                                                              nil);
+                                                                           });
+                                                                   }];
+                                           }
+                                           else
+                                           {
+                                               [api
+                                                   insertUserBookRead:userBookId
+                                                      progressSeconds:currentProgress
+                                                            editionId:editionId
+                                                           completion:^(NSDictionary *newReadData,
+                                                                        NSError      *insertError) {
+                                                               dispatch_async(
+                                                                   dispatch_get_main_queue(), ^{
+                                                                       [self
+                                                                           refreshCurrentlyReadingData];
+                                                                       if (completion)
+                                                                           completion(YES, nil);
+                                                                   });
+                                                           }];
+                                           }
                                        }];
-                      }];
+                     }];
 }
 
 - (void)autoSwitchEditionForASIN:(NSString *)asin

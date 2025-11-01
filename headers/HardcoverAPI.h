@@ -69,6 +69,12 @@ NS_ASSUME_NONNULL_BEGIN
                  editionId:(nonnull NSNumber *)editionId
                 completion:(void (^ _Nullable)(NSDictionary * _Nullable readData, NSError * _Nullable error))completion;
 
+- (void)updateExistingReadProgress:(nonnull NSNumber *)readId
+                   progressSeconds:(NSInteger)seconds
+                         editionId:(nonnull NSNumber *)editionId
+                         startedAt:(nullable NSString *)startedAt
+                        completion:(void (^ _Nullable)(BOOL success, NSError * _Nullable error))completion;
+
 - (void)findEditionByASIN:(nonnull NSString *)asin
                completion:(void (^ _Nullable)(NSNumber * _Nullable editionId, NSError * _Nullable error))completion;
 
