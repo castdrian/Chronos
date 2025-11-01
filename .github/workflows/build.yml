@@ -37,13 +37,7 @@ jobs:
 
       - name: Set IPA URL (dispatch or default)
         id: set-ipa-url
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "ipa_url=${{ inputs.ipa_url }}" >> $GITHUB_OUTPUT
-          else
-            # fallback default for push builds
-            echo "ipa_url=https://files.catbox.moe/itm7dw.ipa" >> $GITHUB_OUTPUT
-          fi
+        run: echo "ipa_url=${{ inputs.ipa_url }}" >> $GITHUB_OUTPUT
 
       - name: Compare tweak version with latest release
         id: version-check

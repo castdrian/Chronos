@@ -4,6 +4,12 @@
 + (NSInteger)getCurrentProgressForASIN:(NSString *)asin;
 @end
 
+#if DEBUG
+static NSString *const kHardcoverGraphQLEndpoint = @"https://staging-api.hardcover.app/v1/graphql";
+#else
+static NSString *const kHardcoverGraphQLEndpoint = @"https://api.hardcover.app/v1/graphql";
+#endif
+
 @interface                                                                     HardcoverAPI ()
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *asinToIDs;
 @end
@@ -51,7 +57,7 @@
                           variables:(NSDictionary *)variables
                          completion:(void (^)(NSDictionary *response, NSError *error))completion
 {
-    NSURL *url = [NSURL URLWithString:@"https://api.hardcover.app/v1/graphql"];
+    NSURL               *url     = [NSURL URLWithString:kHardcoverGraphQLEndpoint];
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     [request setHTTPMethod:@"POST"];
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
