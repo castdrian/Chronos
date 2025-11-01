@@ -1,14 +1,8 @@
 #import "ChronosMenu.h"
 #import "Logger.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 extern NSMutableArray *allChapters;
 extern double          totalBookDuration;
-#ifdef __cplusplus
-}
-#endif
 
 @interface                                  ChronosMenu () <SFSafariViewControllerDelegate>
 @property (nonatomic, strong) UIScrollView *rootScroll;
@@ -172,6 +166,32 @@ extern double          totalBookDuration;
         [self.rootStack.widthAnchor
             constraintEqualToAnchor:self.rootScroll.frameLayoutGuide.widthAnchor]
     ]];
+
+#if DEBUG
+    UIView *stagingBanner             = [[UIView alloc] init];
+    stagingBanner.backgroundColor     = [UIColor colorWithRed:0.69 green:0.36 blue:0.06 alpha:1.0];
+    stagingBanner.layer.cornerRadius  = 11;
+    stagingBanner.layer.masksToBounds = YES;
+    stagingBanner.translatesAutoresizingMaskIntoConstraints = NO;
+
+    UILabel *stagingLabel      = [self labelWithFont:13 weight:UIFontWeightSemibold];
+    stagingLabel.text          = @"Using Hardcover staging API";
+    stagingLabel.textColor     = UIColor.whiteColor;
+    stagingLabel.textAlignment = NSTextAlignmentCenter;
+    stagingLabel.translatesAutoresizingMaskIntoConstraints = NO;
+
+    [stagingBanner addSubview:stagingLabel];
+    [NSLayoutConstraint activateConstraints:@[
+        [stagingLabel.leadingAnchor constraintEqualToAnchor:stagingBanner.leadingAnchor
+                                                   constant:12],
+        [stagingLabel.trailingAnchor constraintEqualToAnchor:stagingBanner.trailingAnchor
+                                                    constant:-12],
+        [stagingLabel.topAnchor constraintEqualToAnchor:stagingBanner.topAnchor constant:8],
+        [stagingLabel.bottomAnchor constraintEqualToAnchor:stagingBanner.bottomAnchor constant:-8]
+    ]];
+
+    [self.rootStack addArrangedSubview:stagingBanner];
+#endif
 
     UIView *card                                   = [[UIView alloc] init];
     card.backgroundColor                           = UIColor.secondarySystemBackgroundColor;
