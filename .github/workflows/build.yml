@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       ipa_url:
-        default: "https://files.catbox.moe/itm7dw.ipa"
+        default: "https://files.catbox.moe/h968or.ipa"
         description: "Direct link to the decrypted ipa"
         required: true
         type: string
