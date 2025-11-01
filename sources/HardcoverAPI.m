@@ -1728,8 +1728,9 @@ static NSString *const kHardcoverGraphQLEndpoint = @"https://api.hardcover.app/v
                          NSInteger currentProgress = 0;
                          if (asin && asin.length > 0)
                          {
-                             currentProgress =
+                             NSInteger progress =
                                  [AudibleMetadataCapture getCurrentProgressForASIN:asin];
+                             currentProgress = (progress >= 0) ? progress : 0;
                          }
 
                          [self

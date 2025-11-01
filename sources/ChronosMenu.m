@@ -2399,8 +2399,9 @@ extern double          totalBookDuration;
                          NSInteger        currentProgress = 0;
                          if (currentASIN && currentASIN.length > 0)
                          {
-                             currentProgress =
+                             NSInteger progress =
                                  [AudibleMetadataCapture getCurrentProgressForASIN:currentASIN];
+                             currentProgress = (progress >= 0) ? progress : 0;
                          }
 
                          [api
