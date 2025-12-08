@@ -33,7 +33,7 @@ jobs:
             reuse_deb: ${{ steps.version-check.outputs.reuse_deb }}
         steps:
             - name: Checkout code
-              uses: actions/checkout@v5
+              uses: actions/checkout@v6
 
             - name: Set IPA URL (dispatch or default)
               id: set-ipa-url
@@ -93,7 +93,7 @@ jobs:
 
         steps:
             - name: Checkout code
-              uses: actions/checkout@v5
+              uses: actions/checkout@v6
               with:
                   submodules: recursive
 
@@ -153,7 +153,7 @@ jobs:
 
         steps:
             - name: Checkout code
-              uses: actions/checkout@v5
+              uses: actions/checkout@v6
               with:
                   submodules: recursive
 
@@ -206,7 +206,7 @@ jobs:
 
         steps:
             - name: Checkout code
-              uses: actions/checkout@v5
+              uses: actions/checkout@v6
 
             - name: Download build artifacts
               uses: actions/download-artifact@v6
@@ -264,7 +264,7 @@ jobs:
         needs: [precheck, release-app]
         steps:
             - name: Checkout code
-              uses: actions/checkout@v5
+              uses: actions/checkout@v6
 
             - name: Download ipa artifact
               uses: actions/download-artifact@v6
